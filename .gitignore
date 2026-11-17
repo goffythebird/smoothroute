@@ -1,0 +1,38 @@
+# Private environment & credentials (NEVER commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+credentials.json
+secrets/
+
+# Local SQLite databases & runtime data
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.sqlite
+data/*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Dependencies
+node_modules/
+
+# Logs & PID files
+logs/
+*.log
+npm-debug.log*
+*.pid
+
+# OS & Editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+coverage/
+tmp/

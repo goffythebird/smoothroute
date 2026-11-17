@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#10b981" />
+  <meta name="description" content="SmoothRoute — Track car & phone G-forces, quantify biomechanical spine wear (ISO 2631-1 VDV), and discover ultra-smooth routes for Tesla FSD and everyday driving." />
+  <title>SmoothRoute — Car G-Force Tracker &amp; Tesla FSD Smooth Router</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <!-- Sticky Header -->
+  <header class="top-header">
+    <div class="brand-group">
+      <img src="/icons/icon.svg" alt="SmoothRoute" class="brand-logo" />
+      <div>
+        <span class="brand-title">SmoothRoute</span>
+        <span class="brand-subtitle">Car &amp; Phone G-Force Telemetry • Body Wear &amp; Tesla FSD Smooth Router</span>
+      </div>
+    </div>
+
+    <nav class="nav-tabs" role="tablist">
+      <button class="nav-tab active" data-tab="planner" id="navBtnPlanner">
+        <span>🗺️ FSD Smooth Router &amp; Map</span>
+      </button>
+      <button class="nav-tab" data-tab="cockpit" id="navBtnCockpit">
+        <span>📡 Phone G-Force Cockpit</span>
+      </button>
+      <button class="nav-tab" data-tab="garage" id="navBtnGarage">
+        <span>🚗 My Car &amp; Suspension</span>
+      </button>
+      <button class="nav-tab" data-tab="community" id="navBtnCommunity">
+        <span>📊 Trips &amp; Account</span>
+      </button>
+    </nav>
+
+    <div class="header-actions">
+      <div class="active-car-pill" id="headerCarBadge" title="Click to change active car or suspension profile">
+        <span>⚡</span>
+        <span id="headerCarText">2025 Tesla Model Y LR (κ=1.06x)</span>
+      </div>
+      <button class="user-pill" id="headerAuthBtn">Sign Up / Log In</button>
+    </div>
+  </header>
+
+  <main class="main-container">
+    <!-- Top Live Platform Summary Strip -->
+    <section class="hero-metrics-bar" id="heroMetricsBar">
+      <div class="metric-tile">
+        <span class="metric-label">Public Smooth &amp; High-G Routes</span>
+        <span class="metric-value" id="statPublicRoutes">7</span>
+        <span class="metric-sub" id="statCommunityDrives">605+ Crowd-Sourced Drives</span>
+      </div>
+      <div class="metric-tile">
+        <span class="metric-label">Mapped G-Force Road Hazards</span>
+        <span class="metric-value" id="statHazards">6</span>
+        <span class="metric-sub">Potholes, Joints &amp; FSD Braking Zones</span>
+      </div>
+      <div class="metric-tile">
+        <span class="metric-label">Active Vehicle Calibration</span>
+        <span class="metric-value" id="statActiveCarFactor">1.06x</span>
+        <span class="metric-sub" id="statActiveCarSub">Tesla Model Y Long Range</span>
+      </div>
+      <div class="metric-tile">
+        <span class="metric-label">FSD Smooth Routing Mode</span>
+        <span class="metric-value" id="statRoutingMode">FSD Smooth</span>
+        <span class="metric-sub">Minimizes Jerk &amp; ISO-2631 Spine Wear</span>
+      </div>
+    </section>
+
+    <!-- TAB 1: TESLA FSD SMOOTH ROUTE PLANNER & PUBLIC MAP -->
+    <section class="tab-panel active" id="tab-planner">
+      <div class="controls-bar">
+        <div class="form-group">
+          <label for="corridorSelect">Route Corridor</label>
+          <select id="corridorSelect">
+            <option value="sf-palo-alto">San Francisco ↔ Palo Alto / Stanford</option>
+            <option value="silicon-valley-cross">Cupertino (Apple Park) ↔ Mountain View / Palo Alto</option>
+            <option value="austin-gigafactory">Austin Downtown ↔ Giga Texas (Tesla HQ)</option>
+            <option value="all">All Public Routes &amp; Corridors</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="optimizationModeSelect">Routing Priority (FSD &amp; Body Wear)</label>
+          <select id="optimizationModeSelect">
+            <option value="fsd_smooth">⚡ Tesla FSD Smooth Priority (Min Jerk &amp; Potholes)</option>
+            <option value="low_body_wear">🦴 Spine &amp; Body Protection (Min ISO-2631 VDV)</option>
+            <option value="balanced">⚖️ Balanced Smoothness + Travel Time</option>
+            <option value="fastest">⏱️ Fastest Raw ETA (High-G Warnings Only)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="plannerVehicleSelect">Predict G-Forces For Car</label>
+          <select id="plannerVehicleSelect"></select>
+        </div>
+        <div class="form-group" style="justify-content: flex-end;">
+          <label>&nbsp;</label>
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn btn-primary" id="btnCompareRoutes" style="flex:1;">Compare Smoothness</button>
+            <button class="btn btn-amber" id="btnOpenHazardModal">+ Report G-Hazard</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="planner-grid">
+        <!-- Left Column: Interactive G-Force Route & Hazard Map -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🌍 Crowd-Sourced G-Force Route &amp; Road Hazard Map</div>
+            <div style="display:flex; gap:0.4rem;">
+              <button class="btn btn-outline btn-sm" id="btnFitMapBounds">Fit Corridor</button>
+              <button class="btn btn-cyan btn-sm" id="btnGoRecordFromMap">Record New Drive</button>
+            </div>
+          </div>
+          <div id="routeMap"></div>
+          <div class="map-legend">
+            <span><i class="legend-dot" style="background:#10b981;"></i>Ultra Smooth (&lt;0.08G RMS • FSD Ideal)</span>
+            <span><i class="legend-dot" style="background:#f59e0b;"></i>Moderate Roughness (0.08–0.15G)</span>
+            <span><i class="legend-dot" style="background:#ef4444;"></i>High G-Shock / Body Wear (&gt;0.15G RMS)</span>
+            <span><i class="legend-dot" style="background:#f43f5e; border:2px solid #fff;"></i>Severe Pothole / FSD Brake Hazard</span>
+          </div>
+
+          <!-- Mapped Hazards List under Map -->
+          <div style="margin-top: 1.15rem;">
+            <div class="card-header" style="margin-bottom:0.6rem; padding-bottom:0.4rem;">
+              <div class="card-title" style="font-size:0.9rem;">⚠️ Active High-G Road Hazards on Map</div>
+              <span style="font-size:0.75rem; color:var(--text-secondary);">Click any hazard to center map or confirm</span>
+            </div>
+            <div id="hazardsListContainer" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap:0.65rem;"></div>
+          </div>
+        </div>
+
+        <!-- Right Column: Ranked Routes & FSD / Body Wear Comparison -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🏆 Ranked Routes for Your Car &amp; Body</div>
+            <span class="badge badge-info" id="comparisonSummaryBadge">FSD Smooth Ranking</span>
+          </div>
+
+          <div id="fsdSavingsCallout" style="margin-bottom: 1rem; padding: 0.85rem; border-radius: 10px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.35); font-size: 0.84rem;"></div>
+
+          <div class="route-cards-list" id="routeCardsContainer"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: PHONE G-FORCE COCKPIT & LIVE RECORDER -->
+    <section class="tab-panel" id="tab-cockpit">
+      <div class="cockpit-grid">
+        <!-- Left: Live 2D G-Ball, Mount Calibration & Recording Controls -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🎯 Live 3-Axis G-Force Meter</div>
+            <span class="badge badge-splus" id="sensorStatusBadge">Ready</span>
+          </div>
+
+          <div class="gball-container">
+            <canvas id="gBallCanvas" width="280" height="280"></canvas>
+
+            <div class="live-readout-grid">
+              <div class="readout-box">
+                <div class="r-label">Vertical G (Road)</div>
+                <div class="r-val" id="liveGVert" style="color:#10b981;">0.00G</div>
+              </div>
+              <div class="readout-box">
+                <div class="r-label">Longitudinal G</div>
+                <div class="r-val" id="liveGLon" style="color:#38bdf8;">0.00G</div>
+              </div>
+              <div class="readout-box">
+                <div class="r-label">Lateral G</div>
+                <div class="r-val" id="liveGLat" style="color:#a78bfa;">0.00G</div>
+              </div>
+              <div class="readout-box">
+                <div class="r-label">Peak Shock</div>
+                <div class="r-val" id="livePeakG" style="color:#f59e0b;">0.00G</div>
+              </div>
+              <div class="readout-box">
+                <div class="r-label">Jerk (dG/dt)</div>
+                <div class="r-val" id="liveJerk">0.0 G/s</div>
+              </div>
+              <div class="readout-box">
+                <div class="r-label">Spine VDV</div>
+                <div class="r-val" id="liveVdv">0.00</div>
+              </div>
+            </div>
+          </div>
+
+          <hr style="border:none; border-top:1px solid var(--border-subtle); margin:1rem 0;" />
+
+          <!-- Phone Sensor & Calibration Controls -->
+          <div style="display:flex; flex-direction:column; gap:0.65rem;">
+            <div style="display:flex; gap:0.5rem;">
+              <button class="btn btn-primary" id="btnStartPhoneSensors" style="flex:1;">
+                📱 Start Real Phone Sensor Recording
+              </button>
+              <button class="btn btn-outline" id="btnCalibrateMount" title="Zero 3-axis accelerometer to current phone mount tilt">
+                📐 Zero Mount
+              </button>
+            </div>
+            <div style="font-size:0.75rem; color:var(--text-secondary);" id="mountCalibrationInfo">
+              Mount Calibration: 70.0° pitch, 0.0° roll (MagSafe Dash Mount)
+            </div>
+          </div>
+
+          <hr style="border:none; border-top:1px solid var(--border-subtle); margin:1rem 0;" />
+
+          <!-- Interactive Physics Drive Telemetry Simulator -->
+          <div>
+            <div style="font-size:0.82rem; font-weight:700; margin-bottom:0.45rem; color:#7dd3fc;">
+              🧪 Interactive Drive Telemetry Simulator (Test Any Route &amp; Car)
+            </div>
+            <div class="form-group" style="margin-bottom:0.55rem;">
+              <label for="simRouteSelect">Simulate Corridor Surface</label>
+              <select id="simRouteSelect">
+                <option value="smooth_i280">I-280 S — Junipero Serra Smooth FSD Ribbon (0.04G avg)</option>
+                <option value="rough_us101">US-101 S — Bayshore Rutted Freeway (0.18G avg + Bridge Joints)</option>
+                <option value="concrete_ca85">CA-85 N — Concrete Slab 4.8Hz Harmonic Bounce</option>
+                <option value="construction_us183">US-183 S — Steel Trench Plates &amp; Severe Potholes</option>
+              </select>
+            </div>
+            <div style="display:flex; gap:0.5rem; margin-bottom:0.55rem;">
+              <button class="btn btn-cyan" id="btnToggleSimDrive" style="flex:1;">▶️ Start Simulated FSD Drive</button>
+              <button class="btn btn-danger" id="btnStopAndSaveTrip" disabled>⏹️ Finish &amp; Save Trip</button>
+            </div>
+
+            <div style="font-size:0.73rem; color:var(--text-secondary); margin-top:0.4rem;">
+              Inject Live Road G-Force Events While Recording:
+            </div>
+            <div class="sim-hazard-buttons">
+              <button class="btn btn-outline btn-sm" id="btnInjectPothole">💥 Pothole (+0.68G Vert)</button>
+              <button class="btn btn-outline btn-sm" id="btnInjectJoint">〰️ Bridge Joint (+0.38G)</button>
+              <button class="btn btn-outline btn-sm" id="btnInjectBrake">🛑 FSD Hard Brake (-0.52G)</button>
+              <button class="btn btn-outline btn-sm" id="btnInjectCurve">↩️ Sharp Curve (0.44G Lat)</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Real-Time 3-Axis Waveform Oscilloscope, Trip Metadata & Live Post-Trip Analysis -->
+        <div style="display:flex; flex-direction:column; gap:1.25rem;">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">📈 Real-Time 3-Axis G-Force &amp; Spine Shock Oscilloscope</div>
+              <div style="font-size:0.76rem; color:var(--text-secondary);">
+                <span style="color:#10b981;">■ Vertical G (Spine)</span> &nbsp;
+                <span style="color:#38bdf8;">■ Longitudinal G (FSD Brake/Accel)</span> &nbsp;
+                <span style="color:#a78bfa;">■ Lateral G (Turn)</span>
+              </div>
+            </div>
+            <canvas id="waveformCanvas" width="820" height="240"></canvas>
+
+            <!-- Trip Metadata Form for Saving -->
+            <div class="controls-bar" style="margin-top:1rem; margin-bottom:0;">
+              <div class="form-group">
+                <label for="tripTitleInput">Trip / Route Title</label>
+                <input type="text" id="tripTitleInput" placeholder="e.g. Morning FSD v13 Commute on I-280" value="I-280 South FSD Smoothness Run" />
+              </div>
+              <div class="form-group">
+                <label for="tripOriginInput">Origin</label>
+                <input type="text" id="tripOriginInput" value="San Francisco" />
+              </div>
+              <div class="form-group">
+                <label for="tripDestInput">Destination</label>
+                <input type="text" id="tripDestInput" value="Palo Alto / Stanford" />
+              </div>
+              <div class="form-group">
+                <label for="tripDriveModeSelect">Drive Mode</label>
+                <select id="tripDriveModeSelect">
+                  <option value="FSD Supervised">Tesla FSD Supervised (v13)</option>
+                  <option value="Autopilot">Tesla Autopilot</option>
+                  <option value="Manual Chill">Manual Chill Driver</option>
+                  <option value="Manual Dynamic">Manual Dynamic</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="tripPublishRouteCheck">Public Contribution</label>
+                <select id="tripPublishRouteCheck">
+                  <option value="true">Publish Route &amp; Hazards to Public Map</option>
+                  <option value="false">Save Trip + Hazards Only</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Latest Recorded Trip Biomechanical & FSD Report Card -->
+          <div class="card" id="latestTripReportCard">
+            <div class="card-header">
+              <div class="card-title">🦴 Biomechanical Body Wear &amp; Tesla FSD Report Card</div>
+              <span class="badge badge-splus" id="reportFsdGradeBadge">Ready to Record</span>
+            </div>
+            <div id="latestTripReportBody" style="font-size:0.88rem; color:var(--text-secondary);">
+              Start a real phone sensor recording or run the Interactive Drive Telemetry Simulator above, then click <strong>Finish &amp; Save Trip</strong> to generate a full ISO 2631-1 Whole-Body Vibration (VDV), Spine Micro-Shock, and Tesla FSD Smoothness report card.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: MY CAR GARAGE & SUSPENSION PHYSICS -->
+    <section class="tab-panel" id="tab-garage">
+      <div class="two-col-grid">
+        <!-- Left: User's Garage & Add Vehicle Form -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🚗 My Garage — Car &amp; Suspension Calibration</div>
+            <span class="badge badge-info">Calibrates Phone G-Force to Road</span>
+          </div>
+          <p style="font-size:0.83rem; color:var(--text-secondary); margin-bottom:1rem;">
+            Why does your car matter? A 0.50G road bump feels like <strong>0.39G</strong> in a Tesla Model S with Adaptive Air Suspension, <strong>0.53G</strong> in a Model Y Long Range, and <strong>0.62G</strong> in a Model 3 Performance on 20" low-profile tires. SmoothRoute uses your car's <strong>Suspension Transfer Factor (κ)</strong> to normalize crowd-sourced road data and predict your exact body wear.
+          </p>
+
+          <div id="userGarageList" style="display:flex; flex-direction:column; gap:0.75rem; margin-bottom:1.25rem;"></div>
+
+          <div style="background:rgba(15,23,42,0.7); padding:1rem; border-radius:10px; border:1px solid var(--border-subtle);">
+            <div style="font-weight:700; font-size:0.9rem; margin-bottom:0.75rem;">+ Add Vehicle to Your Garage</div>
+            <div class="controls-bar" style="margin-bottom:0.75rem;">
+              <div class="form-group">
+                <label for="garageTemplateSelect">Pre-Calibrated Vehicle Template</label>
+                <select id="garageTemplateSelect"></select>
+              </div>
+              <div class="form-group">
+                <label for="garageNicknameInput">Vehicle Nickname</label>
+                <input type="text" id="garageNicknameInput" placeholder="e.g. My FSD Daily Cruiser" />
+              </div>
+            </div>
+            <div class="controls-bar" style="margin-bottom:0.75rem;">
+              <div class="form-group">
+                <label for="garageSuspSelect">Suspension Override (Optional)</label>
+                <select id="garageSuspSelect">
+                  <option value="">Use Template Default</option>
+                  <option value="air_adaptive">Adaptive Air Suspension (Softest • ~0.80x)</option>
+                  <option value="frequency_selective_damping">Frequency Selective Damping (~0.92x)</option>
+                  <option value="coil_comfort">Comfort Coil Springs (~0.95x)</option>
+                  <option value="coil_standard">Standard Coil Springs (1.00x Reference)</option>
+                  <option value="adaptive_sport">Adaptive Sport Coilovers (~1.18x)</option>
+                  <option value="coil_sport">Lowered Sport Coilovers (~1.24x)</option>
+                  <option value="track_stiff">Track Stiff Chassis (~1.38x)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="garageWheelInput">Wheel Size (Inches)</label>
+                <input type="number" id="garageWheelInput" min="15" max="24" placeholder="19" />
+              </div>
+            </div>
+            <button class="btn btn-primary" id="btnAddGarageVehicle">Add Car &amp; Set Active</button>
+          </div>
+        </div>
+
+        <!-- Right: Cross-Vehicle Suspension Benchmark Table -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🔬 Vehicle Suspension G-Isolation Benchmark</div>
+            <span class="badge badge-splus">ISO 2631-1 Reference Road</span>
+          </div>
+          <p style="font-size:0.82rem; color:var(--text-secondary); margin-bottom:0.9rem;">
+            Comparison of how different vehicles transmit vertical G-forces and cause human body wear over a standard rough road segment (0.12G RMS / 0.50G pothole input):
+          </p>
+          <div style="overflow-x:auto;">
+            <table class="data-table" id="vehicleBenchmarkTable">
+              <thead>
+                <tr>
+                  <th>Vehicle &amp; Trim</th>
+                  <th>Suspension &amp; Tires</th>
+                  <th>Transfer (κ)</th>
+                  <th>Cabin Peak G</th>
+                  <th>Body Wear</th>
+                  <th>FSD Score</th>
+                </tr>
+              </thead>
+              <tbody id="vehicleBenchmarkTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: COMMUNITY TRIPS, TELEMETRY EXPORT & USER ACCOUNT -->
+    <section class="tab-panel" id="tab-community">
+      <div class="two-col-grid">
+        <!-- Left: Recorded Trips Feed & Telemetry Export -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">📊 Recorded G-Force Trips &amp; Telemetry Feed</div>
+            <div style="display:flex; gap:0.4rem;">
+              <button class="btn btn-outline btn-sm" id="btnFilterAllTrips">All Public Trips</button>
+              <button class="btn btn-outline btn-sm" id="btnFilterMyTrips">My Recorded Trips</button>
+            </div>
+          </div>
+          <div id="tripsFeedContainer" style="display:flex; flex-direction:column; gap:0.85rem;"></div>
+        </div>
+
+        <!-- Right: User Account Sign Up / Login / Driver Profile -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">👤 Driver Account &amp; FSD Preferences</div>
+            <span class="badge badge-info" id="accountStatusBadge">Guest Mode</span>
+          </div>
+
+          <!-- Logged Out View: Sign Up & Log In Tabs -->
+          <div id="authFormsWrapper">
+            <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+              <button class="btn btn-primary btn-sm" id="btnShowSignupForm">Create Account (Sign Up)</button>
+              <button class="btn btn-outline btn-sm" id="btnShowLoginForm">Existing User Log In</button>
+            </div>
+
+            <!-- Sign Up Form -->
+            <form id="signupForm" style="display:flex; flex-direction:column; gap:0.75rem;">
+              <div class="form-group">
+                <label for="suDisplayName">Your Name / Driver Handle</label>
+                <input type="text" id="suDisplayName" placeholder="e.g. Shaun (FSD Driver)" required />
+              </div>
+              <div class="two-col-grid" style="gap:0.75rem;">
+                <div class="form-group">
+                  <label for="suUsername">Username</label>
+                  <input type="text" id="suUsername" placeholder="shaun_fsd" required />
+                </div>
+                <div class="form-group">
+                  <label for="suEmail">Email Address</label>
+                  <input type="email" id="suEmail" placeholder="driver@example.com" required />
+                </div>
+              </div>
+              <div class="two-col-grid" style="gap:0.75rem;">
+                <div class="form-group">
+                  <label for="suPassword">Password (min 6 chars)</label>
+                  <input type="password" id="suPassword" placeholder="••••••••" required />
+                </div>
+                <div class="form-group">
+                  <label for="suCarTemplate">Your Primary Car</label>
+                  <select id="suCarTemplate"></select>
+                </div>
+              </div>
+              <div class="two-col-grid" style="gap:0.75rem;">
+                <div class="form-group">
+                  <label for="suDriverMode">Preferred Route Optimization</label>
+                  <select id="suDriverMode">
+                    <option value="fsd_smooth">Tesla FSD Smooth Priority</option>
+                    <option value="low_body_wear">Minimum Body Wear / Spine Protection</option>
+                    <option value="balanced">Balanced Smoothness &amp; ETA</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="suSensitivity">Body / Spine Sensitivity</label>
+                  <select id="suSensitivity">
+                    <option value="sensitive_spine">High Comfort / Spine Protection</option>
+                    <option value="normal">Standard Comfort</option>
+                    <option value="sport">Sport Firmness Tolerant</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary" style="margin-top:0.35rem;">
+                🚀 Create Account &amp; Calibrate Car Profile
+              </button>
+            </form>
+
+            <!-- Log In Form -->
+            <form id="loginForm" style="display:none; flex-direction:column; gap:0.75rem;">
+              <div class="form-group">
+                <label for="liIdentifier">Username or Email</label>
+                <input type="text" id="liIdentifier" placeholder="tesla_fsd_pilot or email" required />
+              </div>
+              <div class="form-group">
+                <label for="liPassword">Password</label>
+                <input type="password" id="liPassword" placeholder="••••••••" required />
+              </div>
+              <div style="font-size:0.76rem; color:var(--text-secondary);">
+                Demo Community Account: <code>tesla_fsd_pilot</code> / <code>SmoothFSD2026!</code>
+              </div>
+              <button type="submit" class="btn btn-primary">Sign In to SmoothRoute</button>
+            </form>
+          </div>
+
+          <!-- Logged In Profile View -->
+          <div id="loggedInProfileWrapper" style="display:none; flex-direction:column; gap:0.9rem;">
+            <div style="padding:1rem; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.3); border-radius:10px;">
+              <div style="font-size:1.05rem; font-weight:700;" id="profileDisplayName">-</div>
+              <div style="font-size:0.8rem; color:var(--text-secondary);" id="profileEmailLine">-</div>
+              <div style="margin-top:0.5rem; display:flex; gap:0.5rem; flex-wrap:wrap;" id="profileBadgesRow"></div>
+            </div>
+
+            <div class="form-group">
+              <label for="profModeSelect">Default Route Optimization</label>
+              <select id="profModeSelect">
+                <option value="fsd_smooth">⚡ Tesla FSD Smooth Priority</option>
+                <option value="low_body_wear">🦴 Minimum Body Wear / Spine Saver</option>
+                <option value="balanced">⚖️ Balanced Smoothness + Time</option>
+                <option value="fastest">⏱️ Fastest Route</option>
+              </select>
+            </div>
+            <div style="display:flex; gap:0.5rem;">
+              <button class="btn btn-primary" id="btnSaveProfilePrefs">Save Preferences</button>
+              <button class="btn btn-outline" id="btnLogout">Log Out</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL: Report Road G-Force Hazard -->
+  <div class="modal-backdrop" id="hazardModal">
+    <div class="modal-card">
+      <div class="card-header">
+        <div class="card-title">⚠️ Report High-G Road Hazard</div>
+        <button class="btn btn-outline btn-sm" id="btnCloseHazardModal">✕</button>
+      </div>
+      <form id="reportHazardForm" style="display:flex; flex-direction:column; gap:0.75rem;">
+        <div class="form-group">
+          <label for="hazLabel">Hazard Title</label>
+          <input type="text" id="hazLabel" placeholder="e.g. Deep Pothole in Center Lane / Sunken Bridge Joint" required />
+        </div>
+        <div class="two-col-grid" style="gap:0.75rem;">
+          <div class="form-group">
+            <label for="hazType">Hazard Type</label>
+            <select id="hazType">
+              <option value="pothole_shock">Pothole / Crater (Vertical Shock)</option>
+              <option value="expansion_joint">Jarring Bridge / Concrete Joint</option>
+              <option value="fsd_braking_zone">FSD Phantom / Hard Braking Zone</option>
+              <option value="high_lateral_g_curve">Abrupt High Lateral-G Curve</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="hazSeverity">Severity</label>
+            <select id="hazSeverity">
+              <option value="severe">Severe (&gt;0.65G Shock)</option>
+              <option value="high" selected>High (0.45–0.65G)</option>
+              <option value="moderate">Moderate (0.30–0.45G)</option>
+            </select>
+          </div>
+        </div>
+        <div class="two-col-grid" style="gap:0.75rem;">
+          <div class="form-group">
+            <label for="hazRoadName">Road / Highway Name</label>
+            <input type="text" id="hazRoadName" value="US-101 S near Marsh Rd" required />
+          </div>
+          <div class="form-group">
+            <label for="hazPeakG">Measured Peak G-Force</label>
+            <input type="number" step="0.01" min="0.1" max="3.0" id="hazPeakG" value="0.64" required />
+          </div>
+        </div>
+        <div class="two-col-grid" style="gap:0.75rem;">
+          <div class="form-group">
+            <label for="hazLat">Latitude</label>
+            <input type="number" step="0.0001" id="hazLat" value="37.4950" required />
+          </div>
+          <div class="form-group">
+            <label for="hazLng">Longitude</label>
+            <input type="number" step="0.0001" id="hazLng" value="-122.2380" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="hazDesc">Biomechanical / FSD Impact Notes</label>
+          <textarea id="hazDesc" rows="2" placeholder="Describe lane position, FSD reaction, or suspension impact..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Submit Hazard to Public Map</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="toastContainer"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

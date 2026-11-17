@@ -1,0 +1,18 @@
+{
+  "name": "SmoothRoute — Car G-Force Tracker & Tesla FSD Smooth Router",
+  "short_name": "SmoothRoute",
+  "description": "Track phone G-force telemetry calibrated to your car, measure biomechanical body wear, and find ultra-smooth routes for Tesla FSD and everyday driving.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#10b981",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

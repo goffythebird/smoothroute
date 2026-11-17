@@ -1,0 +1,36 @@
+{
+  "name": "smoothroute",
+  "version": "1.0.0",
+  "description": "End-to-end car & phone G-force telemetry tracker, biomechanical body-wear analyzer, and Tesla FSD smooth route planner",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning src/server.js",
+    "dev": "node --no-warnings=ExperimentalWarning --watch src/server.js",
+    "seed": "node --no-warnings=ExperimentalWarning src/db/seed.js",
+    "test": "node --no-warnings=ExperimentalWarning --test tests/*.test.js",
+    "audit:secrets": "node --no-warnings=ExperimentalWarning tests/secrets.audit.js"
+  },
+  "keywords": [
+    "g-force",
+    "accelerometer",
+    "tesla",
+    "fsd",
+    "smooth-routes",
+    "road-roughness",
+    "iso-2631",
+    "whole-body-vibration",
+    "telemetry",
+    "pwa"
+  ],
+  "author": "Shaun (@goffythebird)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0"
+  }
+}

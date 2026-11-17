@@ -1,0 +1,31 @@
+name: SmoothRoute CI & Security Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-and-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Physics, API & Security Test Suite
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci_ephemeral_test_secret_64_bytes_0123456789abcdef0123456789abcdef' }}
+        run: npm test
+
+      - name: Verify Zero Leaked Secrets
+        run: npm run audit:secrets
