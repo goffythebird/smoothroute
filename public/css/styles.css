@@ -369,6 +369,10 @@ input:focus, select:focus, textarea:focus {
   background: #0b1322;
 }
 
+#routeMap.map-dark-tiles .leaflet-tile-pane {
+  filter: invert(100%) hue-rotate(180deg) brightness(94%) contrast(92%) saturate(85%);
+}
+
 .map-legend {
   display: flex;
   flex-wrap: wrap;

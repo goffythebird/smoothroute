@@ -5,12 +5,17 @@
 
 const crypto = require('node:crypto');
 
+let fallbackRuntimeSecret = null;
+
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET;
-  if (!secret || secret === 'replace_with_64_byte_random_hex_secret_do_not_commit') {
-    throw new Error('JWT_SECRET is missing or set to placeholder. Ensure private .env is configured.');
+  if (secret && secret !== 'replace_with_64_byte_random_hex_secret_do_not_commit') {
+    return secret;
   }
-  return secret;
+  if (!fallbackRuntimeSecret) {
+    fallbackRuntimeSecret = crypto.randomBytes(48).toString('hex');
+  }
+  return fallbackRuntimeSecret;
 }
 
 /**

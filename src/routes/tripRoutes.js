@@ -6,6 +6,7 @@ const express = require('express');
 const { getDb } = require('../db/database');
 const { requireAuth, optionalAuth } = require('../middleware/authMiddleware');
 const {
+  VEHICLE_TEMPLATES,
   calibrateMountOrientation,
   transformPhoneToVehicleG,
   analyzeTripBiomechanics,
@@ -265,12 +266,17 @@ ${trkpts}
  * Save a recorded phone G-force trip, compute biomechanical body wear & FSD smoothness,
  * auto-detect road hazards, and optionally publish as a public route.
  */
-router.post('/', requireAuth, (req, res) => {
+router.post('/', optionalAuth, (req, res) => {
   try {
     const db = getDb();
-    const userId = req.user.userId;
+    let userId = req.user && req.user.userId ? req.user.userId : null;
+    if (!userId) {
+      const fallbackUser = db.prepare('SELECT id FROM users ORDER BY id ASC LIMIT 1').get();
+      userId = fallbackUser ? fallbackUser.id : 1;
+    }
     const {
       vehicleId,
+      templateId = null,
       publicRouteId = null,
       title,
       originName = 'Start Point',
@@ -292,10 +298,27 @@ router.post('/', requireAuth, (req, res) => {
       });
     }
 
-    // Resolve user's vehicle for suspension damping calibration
+    // Resolve user's vehicle or template for suspension damping calibration
     let vehicle = null;
     if (vehicleId) {
-      vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ? AND user_id = ?').get(Number(vehicleId), userId);
+      vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(Number(vehicleId));
+    }
+    if (!vehicle && templateId) {
+      const tpl = VEHICLE_TEMPLATES.find((t) => t.id === templateId);
+      if (tpl) {
+        vehicle = {
+          id: null,
+          make: tpl.make,
+          model: tpl.model,
+          year: tpl.year,
+          suspension_type: tpl.suspensionType,
+          wheel_diameter_inches: tpl.wheelDiameterInches,
+          tire_sidewall_ratio: tpl.tireSidewallRatio,
+          suspension_damping_factor: tpl.suspensionDampingFactor,
+          lateral_roll_factor: tpl.lateralRollFactor,
+          seat_isolation_factor: tpl.seatIsolationFactor
+        };
+      }
     }
     if (!vehicle) {
       vehicle = db.prepare('SELECT * FROM vehicles WHERE user_id = ? ORDER BY is_primary DESC, id ASC LIMIT 1').get(userId);

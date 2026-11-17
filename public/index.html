@@ -105,17 +105,34 @@
         </div>
       </div>
 
+      <!-- Custom Any-Address Smooth Route Planner Bar (Zero API Key OSRM + Nominatim) -->
+      <div class="controls-bar" style="margin-top:-0.35rem; background:rgba(16, 185, 129, 0.06); border-color:rgba(16, 185, 129, 0.25);">
+        <div class="form-group">
+          <label for="customOriginInput">🔎 Custom Origin (Any City or Address)</label>
+          <input type="text" id="customOriginInput" placeholder="e.g. San Jose, CA or 1 Tesla Rd, Austin" />
+        </div>
+        <div class="form-group">
+          <label for="customDestInput">🏁 Custom Destination (Any City or Address)</label>
+          <input type="text" id="customDestInput" placeholder="e.g. San Francisco, CA or Palo Alto, CA" />
+        </div>
+        <div class="form-group" style="justify-content: flex-end;">
+          <label>&nbsp;</label>
+          <button class="btn btn-cyan" id="btnPlanCustomRoute">⚡ Calculate Live Smooth FSD Routes</button>
+        </div>
+      </div>
+
       <div class="planner-grid">
         <!-- Left Column: Interactive G-Force Route & Hazard Map -->
         <div class="card">
           <div class="card-header">
             <div class="card-title">🌍 Crowd-Sourced G-Force Route &amp; Road Hazard Map</div>
             <div style="display:flex; gap:0.4rem;">
+              <button class="btn btn-outline btn-sm" id="btnToggleMapTheme">☀️ Daylight Map</button>
               <button class="btn btn-outline btn-sm" id="btnFitMapBounds">Fit Corridor</button>
               <button class="btn btn-cyan btn-sm" id="btnGoRecordFromMap">Record New Drive</button>
             </div>
           </div>
-          <div id="routeMap"></div>
+          <div id="routeMap" class="map-dark-tiles"></div>
           <div class="map-legend">
             <span><i class="legend-dot" style="background:#10b981;"></i>Ultra Smooth (&lt;0.08G RMS • FSD Ideal)</span>
             <span><i class="legend-dot" style="background:#f59e0b;"></i>Moderate Roughness (0.08–0.15G)</span>

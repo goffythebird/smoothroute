@@ -139,9 +139,8 @@
       zoomControl: true
     });
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap &copy; CARTO',
-      subdomains: 'abcd',
+    L.tileLayer('/api/tiles/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19
     }).addTo(map);
   }
@@ -1056,12 +1055,6 @@
       return;
     }
 
-    if (!state.token) {
-      showToast('Please Sign Up or Log In on the Trips & Account tab to save your recorded trip!', 'warn');
-      switchTab('community');
-      return;
-    }
-
     try {
       const title = document.getElementById('tripTitleInput').value || 'Recorded G-Force Drive';
       const originName = document.getElementById('tripOriginInput').value || 'Origin';
@@ -1073,6 +1066,7 @@
         method: 'POST',
         body: JSON.stringify({
           vehicleId: state.activeVehicleId,
+          templateId: state.activeVehicleTemplateId,
           title,
           originName,
           destinationName,
@@ -1281,6 +1275,61 @@
     });
     document.getElementById('btnGoRecordFromMap')?.addEventListener('click', () => switchTab('cockpit'));
 
+    document.getElementById('btnToggleMapTheme')?.addEventListener('click', (e) => {
+      const mapEl = document.getElementById('routeMap');
+      if (!mapEl) return;
+      const isDark = mapEl.classList.toggle('map-dark-tiles');
+      e.currentTarget.textContent = isDark ? '☀️ Daylight Map' : '🌙 Tesla Dark Map';
+    });
+
+    async function handlePlanCustomRoute() {
+      const originQuery = document.getElementById('customOriginInput')?.value.trim();
+      const destinationQuery = document.getElementById('customDestInput')?.value.trim();
+      if (!originQuery || !destinationQuery) {
+        showToast('Enter both a Custom Origin and Custom Destination (e.g. San Jose, CA to San Francisco, CA).', 'warn');
+        return;
+      }
+      const btn = document.getElementById('btnPlanCustomRoute');
+      const prevText = btn ? btn.textContent : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Calculating Smooth Routes...';
+      }
+      try {
+        const data = await apiFetch('/api/routes/custom-plan', {
+          method: 'POST',
+          body: JSON.stringify({
+            originQuery,
+            destinationQuery,
+            mode: state.mode,
+            vehicleId: state.activeVehicleId,
+            templateId: state.activeVehicleTemplateId,
+            saveToPublic: true
+          })
+        });
+        renderRouteComparisonUI(data);
+        renderMapRoutesAndHazards();
+        showToast(`Calculated ${data.rankedRoutes.length} routes from ${originQuery} to ${destinationQuery}!`);
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = prevText;
+        }
+      }
+    }
+
+    document.getElementById('btnPlanCustomRoute')?.addEventListener('click', handlePlanCustomRoute);
+    ['customOriginInput', 'customDestInput'].forEach((id) => {
+      document.getElementById(id)?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handlePlanCustomRoute();
+        }
+      });
+    });
+
     // Hazard Modal
     const hazardModal = document.getElementById('hazardModal');
     document.getElementById('btnOpenHazardModal')?.addEventListener('click', () => {
@@ -1292,13 +1341,8 @@
 
     document.getElementById('reportHazardForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!state.token) {
-        hazardModal?.classList.remove('open');
-        switchTab('community');
-        showToast('Please sign up or log in to report a road G-force hazard.', 'warn');
-        return;
-      }
       try {
+        const car = getActiveCarObject();
         await apiFetch('/api/hazards', {
           method: 'POST',
           body: JSON.stringify({
@@ -1310,7 +1354,8 @@
             verticalG: Number(document.getElementById('hazPeakG').value) * 0.92,
             lat: Number(document.getElementById('hazLat').value),
             lng: Number(document.getElementById('hazLng').value),
-            description: document.getElementById('hazDesc').value
+            description: document.getElementById('hazDesc').value,
+            vehicleLabel: `${car.year || 2025} ${car.make} ${car.model}`
           })
         });
         hazardModal?.classList.remove('open');

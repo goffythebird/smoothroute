@@ -1,4 +1,4 @@
-const CACHE_NAME = 'smoothroute-v1';
+const CACHE_NAME = 'smoothroute-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -29,6 +29,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request)
+      .then((res) => {
+        const clone = res.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(event.request, clone)).catch(() => {});
+        return res;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
