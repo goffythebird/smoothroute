@@ -212,3 +212,15 @@ test('7. FSD Smooth Route Planner & Comparator returns vehicle-specific ranked r
   assert.equal(compData.recommendedRoute.title || compData.recommendedRoute.name, 'E2E Test FSD Telemetry Run');
   assert.ok(compData.crossCarComparison.length >= 5);
 });
+
+test('8. Automatic HTTP -> HTTPS 301 redirect for public domain requests', async () => {
+  const res = await fetch(`${baseUrl}/`, {
+    headers: {
+      'X-Forwarded-Host': 'smoothroute.botgodz.win',
+      'X-Forwarded-Proto': 'http'
+    },
+    redirect: 'manual'
+  });
+  assert.equal(res.status, 301);
+  assert.equal(res.headers.get('location'), 'https://smoothroute.botgodz.win/');
+});

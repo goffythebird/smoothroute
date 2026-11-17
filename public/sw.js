@@ -1,4 +1,4 @@
-const CACHE_NAME = 'smoothroute-v5';
+const CACHE_NAME = 'smoothroute-v6';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

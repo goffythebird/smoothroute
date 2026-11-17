@@ -17,18 +17,48 @@ const routePlannerRouter = require('./routes/routePlannerRoutes');
 
 function createApp({ autoSeed = true } = {}) {
   const app = express();
+  app.set('trust proxy', true);
 
   const db = getDb();
   if (autoSeed) {
     ensureSeeded(db);
   }
 
+  // Automatically redirect any non-localhost HTTP request to HTTPS (301)
+  app.use((req, res, next) => {
+    const host = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+    const isLocal =
+      host.startsWith('localhost') ||
+      host.startsWith('127.0.0.1') ||
+      host.startsWith('[::1]');
+
+    let proto = req.headers['x-forwarded-proto'];
+    if (!proto && req.headers['cf-visitor']) {
+      try {
+        const visitor = JSON.parse(req.headers['cf-visitor']);
+        proto = visitor.scheme;
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!isLocal && proto === 'http') {
+      return res.redirect(301, `https://${host}${req.originalUrl}`);
+    }
+    next();
+  });
+
   app.use(
     helmet({
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
       crossOriginResourcePolicy: { policy: 'cross-origin' },
-      referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      strictTransportSecurity: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true
+      }
     })
   );
   app.use(cors({ origin: true, credentials: true }));
