@@ -1,0 +1,53 @@
+name: Build Native iOS App (.ipa) on Cloud macOS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-ios-ipa:
+    name: Build SmoothRoute Native iOS .ipa (macOS Cloud Runner)
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies & sync Capacitor iOS
+        run: |
+          npm ci
+          npx cap sync ios
+
+      - name: Build Native iOS App via Xcode (Release)
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ios/build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+
+      - name: Package Compiled App.app into Installable SmoothRoute-iOS.ipa
+        run: |
+          mkdir -p ios/ipa_stage/Payload
+          cp -R ios/build/Build/Products/Release-iphoneos/App.app ios/ipa_stage/Payload/
+          cd ios/ipa_stage
+          zip -r -q ../../SmoothRoute-iOS.ipa Payload
+          ls -lh ../../SmoothRoute-iOS.ipa
+
+      - name: Upload SmoothRoute-iOS.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmoothRoute-iOS-App-IPA
+          path: SmoothRoute-iOS.ipa
+          retention-days: 90
