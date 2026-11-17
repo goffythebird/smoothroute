@@ -1,0 +1,14 @@
+{
+  "appId": "win.botgodz.smoothroute",
+  "appName": "SmoothRoute",
+  "webDir": "public",
+  "server": {
+    "url": "https://smoothroute.botgodz.win",
+    "cleartext": false
+  },
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#070b14",
+    "preferredContentMode": "mobile"
+  }
+}

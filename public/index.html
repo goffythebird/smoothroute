@@ -2,12 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#10b981" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#070b14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SmoothRoute" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="description" content="SmoothRoute — Track car & phone G-forces, quantify biomechanical spine wear (ISO 2631-1 VDV), and discover ultra-smooth routes for Tesla FSD and everyday driving." />
   <title>SmoothRoute — Car G-Force Tracker &amp; Tesla FSD Smooth Router</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+  <link rel="apple-touch-icon" href="/icons/icon.svg" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="/css/styles.css" />
 </head>
@@ -108,8 +113,11 @@
       <!-- Custom Any-Address Smooth Route Planner Bar (Zero API Key OSRM + Nominatim) -->
       <div class="controls-bar" style="margin-top:-0.35rem; background:rgba(16, 185, 129, 0.06); border-color:rgba(16, 185, 129, 0.25);">
         <div class="form-group">
-          <label for="customOriginInput">🔎 Custom Origin (Any City or Address)</label>
-          <input type="text" id="customOriginInput" placeholder="e.g. San Jose, CA or 1 Tesla Rd, Austin" />
+          <label for="customOriginInput">🔎 Custom Origin (City, Address, or GPS)</label>
+          <div style="display:flex; gap:0.4rem;">
+            <input type="text" id="customOriginInput" placeholder="e.g. San Jose, CA or 1 Tesla Rd, Austin" style="flex:1;" />
+            <button type="button" class="btn btn-outline btn-sm" id="btnUseMyLocationOrigin" title="Use phone GPS as Origin">📍 GPS</button>
+          </div>
         </div>
         <div class="form-group">
           <label for="customDestInput">🏁 Custom Destination (Any City or Address)</label>
@@ -170,8 +178,26 @@
         <!-- Left: Live 2D G-Ball, Mount Calibration & Recording Controls -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title">🎯 Live 3-Axis G-Force Meter</div>
+            <div class="card-title">🎯 Live 3-Axis G-Force Cockpit</div>
             <span class="badge badge-splus" id="sensorStatusBadge">Ready</span>
+          </div>
+
+          <!-- Top Thumb-Friendly Phone Sensor & Save Controls -->
+          <div style="display:flex; flex-direction:column; gap:0.55rem; margin-bottom:0.9rem; background:rgba(16,185,129,0.07); padding:0.75rem; border-radius:12px; border:1px solid rgba(16,185,129,0.28);">
+            <button class="btn btn-primary btn-xl-drive" id="btnStartPhoneSensors" style="width:100%;">
+              📱 Start Real Phone Sensor Recording
+            </button>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+              <button class="btn btn-outline" id="btnCalibrateMount" title="Zero 3-axis accelerometer to current phone mount tilt">
+                📐 Zero Mount
+              </button>
+              <button class="btn btn-danger" id="btnStopAndSaveTrip" disabled>
+                ⏹️ Finish &amp; Save
+              </button>
+            </div>
+            <div style="font-size:0.73rem; color:var(--text-secondary); text-align:center;" id="mountCalibrationInfo">
+              Mount Calibration: 70.0° pitch, 0.0° roll (MagSafe Dash Mount)
+            </div>
           </div>
 
           <div class="gball-container">
@@ -207,23 +233,6 @@
 
           <hr style="border:none; border-top:1px solid var(--border-subtle); margin:1rem 0;" />
 
-          <!-- Phone Sensor & Calibration Controls -->
-          <div style="display:flex; flex-direction:column; gap:0.65rem;">
-            <div style="display:flex; gap:0.5rem;">
-              <button class="btn btn-primary" id="btnStartPhoneSensors" style="flex:1;">
-                📱 Start Real Phone Sensor Recording
-              </button>
-              <button class="btn btn-outline" id="btnCalibrateMount" title="Zero 3-axis accelerometer to current phone mount tilt">
-                📐 Zero Mount
-              </button>
-            </div>
-            <div style="font-size:0.75rem; color:var(--text-secondary);" id="mountCalibrationInfo">
-              Mount Calibration: 70.0° pitch, 0.0° roll (MagSafe Dash Mount)
-            </div>
-          </div>
-
-          <hr style="border:none; border-top:1px solid var(--border-subtle); margin:1rem 0;" />
-
           <!-- Interactive Physics Drive Telemetry Simulator -->
           <div>
             <div style="font-size:0.82rem; font-weight:700; margin-bottom:0.45rem; color:#7dd3fc;">
@@ -239,18 +248,17 @@
               </select>
             </div>
             <div style="display:flex; gap:0.5rem; margin-bottom:0.55rem;">
-              <button class="btn btn-cyan" id="btnToggleSimDrive" style="flex:1;">▶️ Start Simulated FSD Drive</button>
-              <button class="btn btn-danger" id="btnStopAndSaveTrip" disabled>⏹️ Finish &amp; Save Trip</button>
+              <button class="btn btn-cyan" id="btnToggleSimDrive" style="width:100%;">▶️ Start Simulated FSD Drive</button>
             </div>
 
             <div style="font-size:0.73rem; color:var(--text-secondary); margin-top:0.4rem;">
               Inject Live Road G-Force Events While Recording:
             </div>
             <div class="sim-hazard-buttons">
-              <button class="btn btn-outline btn-sm" id="btnInjectPothole">💥 Pothole (+0.68G Vert)</button>
-              <button class="btn btn-outline btn-sm" id="btnInjectJoint">〰️ Bridge Joint (+0.38G)</button>
-              <button class="btn btn-outline btn-sm" id="btnInjectBrake">🛑 FSD Hard Brake (-0.52G)</button>
-              <button class="btn btn-outline btn-sm" id="btnInjectCurve">↩️ Sharp Curve (0.44G Lat)</button>
+              <button class="btn btn-outline btn-sm" id="btnInjectPothole">💥 Pothole (+0.68G)</button>
+              <button class="btn btn-outline btn-sm" id="btnInjectJoint">〰️ Joint (+0.38G)</button>
+              <button class="btn btn-outline btn-sm" id="btnInjectBrake">🛑 Hard Brake (-0.52G)</button>
+              <button class="btn btn-outline btn-sm" id="btnInjectCurve">↩️ Curve (0.44G Lat)</button>
             </div>
           </div>
         </div>
@@ -566,6 +574,7 @@
             <input type="number" step="0.0001" id="hazLng" value="-122.2380" required />
           </div>
         </div>
+        <button type="button" class="btn btn-outline btn-sm" id="btnUseMyLocationHazard">📍 Fill Coordinates from Phone GPS</button>
         <div class="form-group">
           <label for="hazDesc">Biomechanical / FSD Impact Notes</label>
           <textarea id="hazDesc" rows="2" placeholder="Describe lane position, FSD reaction, or suspension impact..."></textarea>
@@ -574,6 +583,26 @@
       </form>
     </div>
   </div>
+
+  <!-- Fixed Bottom Thumb Navigation Dock for Mobile / Car Mount -->
+  <nav class="mobile-bottom-nav" aria-label="Mobile Navigation">
+    <button class="mobile-nav-btn active" data-tab="planner">
+      <span class="m-icon">🗺️</span>
+      <span>Routes</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="cockpit">
+      <span class="m-icon">📡</span>
+      <span>G-Cockpit</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="garage">
+      <span class="m-icon">🚗</span>
+      <span>My Car</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="community">
+      <span class="m-icon">📊</span>
+      <span>Trips</span>
+    </button>
+  </nav>
 
   <div id="toastContainer"></div>
 

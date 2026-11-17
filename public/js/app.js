@@ -82,12 +82,13 @@
 
   // --- Tab Navigation ---
   function switchTab(tabName) {
-    document.querySelectorAll('.nav-tab').forEach((btn) => {
+    document.querySelectorAll('.nav-tab, .mobile-nav-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.tab === tabName);
     });
     document.querySelectorAll('.tab-panel').forEach((panel) => {
       panel.classList.toggle('active', panel.id === `tab-${tabName}`);
     });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     if (tabName === 'planner' && map) {
       setTimeout(() => map.invalidateSize(), 80);
     }
@@ -1258,8 +1259,51 @@
 
   // --- Wire Event Listeners ---
   function bindEvents() {
-    document.querySelectorAll('.nav-tab').forEach((btn) => {
+    document.querySelectorAll('.nav-tab, .mobile-nav-btn').forEach((btn) => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+
+    document.getElementById('btnUseMyLocationOrigin')?.addEventListener('click', () => {
+      if (!('geolocation' in navigator)) {
+        showToast('Geolocation is not supported by this browser.', 'warn');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const lat = pos.coords.latitude.toFixed(5);
+          const lng = pos.coords.longitude.toFixed(5);
+          try {
+            const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+            const d = await r.json();
+            const label = d.address
+              ? [d.address.road, d.address.city || d.address.town || d.address.suburb, d.address.state].filter(Boolean).join(', ')
+              : `${lat}, ${lng}`;
+            document.getElementById('customOriginInput').value = label || `${lat}, ${lng}`;
+            showToast(`Set origin to GPS location: ${label}`);
+          } catch {
+            document.getElementById('customOriginInput').value = `${lat}, ${lng}`;
+            showToast(`Set origin to GPS: ${lat}, ${lng}`);
+          }
+        },
+        () => showToast('Unable to retrieve GPS position. Check browser location permissions.', 'warn'),
+        { enableHighAccuracy: true, timeout: 6000 }
+      );
+    });
+
+    document.getElementById('btnUseMyLocationHazard')?.addEventListener('click', () => {
+      if (!('geolocation' in navigator)) {
+        showToast('Geolocation is not supported by this browser.', 'warn');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          document.getElementById('hazLat').value = pos.coords.latitude.toFixed(5);
+          document.getElementById('hazLng').value = pos.coords.longitude.toFixed(5);
+          showToast('Filled hazard coordinates from your phone GPS!');
+        },
+        () => showToast('Unable to read phone GPS. Ensure location access is enabled.', 'warn'),
+        { enableHighAccuracy: true, timeout: 6000 }
+      );
     });
 
     document.getElementById('headerCarBadge')?.addEventListener('click', () => switchTab('garage'));
