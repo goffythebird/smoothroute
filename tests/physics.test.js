@@ -10,7 +10,9 @@ const {
   analyzeTripBiomechanics,
   predictRouteForVehicle,
   detectGForceHazards,
-  rankRoutesForDriver
+  rankRoutesForDriver,
+  iriToNormalizedMetrics,
+  normalizedGToIri
 } = require('../src/physics/gforceEngine');
 
 test('Phone 3-Axis Mount Calibration & Vehicle Frame Transformation', () => {
@@ -134,4 +136,27 @@ test('FSD Smooth Route Ranking prioritizes smooth low-G routes over marginally f
 
   const wearRanked = rankRoutesForDriver(routes, 'low_body_wear');
   assert.equal(wearRanked[0].id, 2, 'Low Body Wear mode must recommend I-280 Smooth Ribbon #1');
+});
+
+test('USDOT FHWA HPMS IRI <-> Normalized G conversion and RV / Motorhome / Spine-Saver profiles', () => {
+  const goodIri = iriToNormalizedMetrics(58, 65);
+  const poorIri = iriToNormalizedMetrics(214, 65);
+
+  assert.equal(goodIri.fhwaRating, 'Good');
+  assert.equal(poorIri.fhwaRating, 'Poor');
+  assert.ok(goodIri.normalizedRoadRoughnessG < poorIri.normalizedRoadRoughnessG);
+  assert.ok(goodIri.smoothnessScore > poorIri.smoothnessScore);
+
+  const backConvert = normalizedGToIri(poorIri.normalizedRoadRoughnessG);
+  assert.equal(backConvert.fhwaRating, 'Poor');
+  assert.ok(backConvert.iriInchesPerMile > 170);
+
+  // Verify RV, Sprinter, Tow-Rig, and Spine-Saver templates exist and compute accurate predictions
+  const classCMotorhome = VEHICLE_TEMPLATES.find((t) => t.id === 'class-c-motorhome-e450');
+  const sprinterVan = VEHICLE_TEMPLATES.find((t) => t.id === 'mercedes-sprinter-camper-2500');
+  const spineSaver = VEHICLE_TEMPLATES.find((t) => t.id === 'lexus-ls500h-spine-saver');
+
+  assert.ok(classCMotorhome && sprinterVan && spineSaver);
+  assert.ok(classCMotorhome.suspensionDampingFactor > sprinterVan.suspensionDampingFactor);
+  assert.ok(spineSaver.suspensionDampingFactor < 0.80);
 });

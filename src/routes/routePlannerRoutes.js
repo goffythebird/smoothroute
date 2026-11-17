@@ -10,8 +10,13 @@ const {
   VEHICLE_TEMPLATES,
   predictRouteForVehicle,
   rankRoutesForDriver,
-  haversineMiles
+  haversineMiles,
+  normalizedGToIri
 } = require('../physics/gforceEngine');
+const {
+  US_NATIONWIDE_CORRIDORS,
+  estimateUsHighwayIriForRoute
+} = require('../physics/usHighwayBaselines');
 
 const router = express.Router();
 
@@ -82,6 +87,7 @@ function formatRouteRow(row) {
   } catch {
     waypoints = [];
   }
+  const iriInfo = normalizedGToIri(row.normalized_road_roughness_g);
   return {
     id: row.id,
     slug: row.slug,
@@ -106,6 +112,9 @@ function formatRouteRow(row) {
     peakLateralG: row.peak_lateral_g,
     peakLongitudinalG: row.peak_longitudinal_g,
     normalizedRoadRoughnessG: row.normalized_road_roughness_g,
+    iriInchesPerMile: iriInfo.iriInchesPerMile,
+    iriMetersPerKm: iriInfo.iriMetersPerKm,
+    fhwaRating: iriInfo.fhwaRating,
     avgJerkGPerSec: row.avg_jerk_g_per_sec,
     vdvScore: row.vdv_score,
     spineShockCount: row.spine_shock_count,
@@ -203,6 +212,23 @@ router.get('/routes', optionalAuth, (req, res) => {
     },
     mode,
     routes: ranked
+  });
+});
+
+/**
+ * GET /api/routes/us-hpms-baselines
+ * Nationwide USDOT FHWA HPMS (International Roughness Index) & OpenStreetMap baseline corridors
+ */
+router.get('/routes/us-hpms-baselines', (_req, res) => {
+  return res.json({
+    source: 'USDOT FHWA Highway Performance Monitoring System (HPMS) & OpenStreetMap Surface Baselines',
+    fhwaThresholds: {
+      good: { maxIriInchesPerMile: 95, maxIriMetersPerKm: 1.5, label: 'Good (<95 in/mi • Ultra Smooth)' },
+      fair: { maxIriInchesPerMile: 170, maxIriMetersPerKm: 2.68, label: 'Fair (95-170 in/mi • Moderate Wear)' },
+      poor: { minIriInchesPerMile: 171, minIriMetersPerKm: 2.69, label: 'Poor (>170 in/mi • High G-Shock / Rim & Spine Hazard)' }
+    },
+    corridorsCount: US_NATIONWIDE_CORRIDORS.length,
+    corridors: US_NATIONWIDE_CORRIDORS
   });
 });
 
@@ -379,8 +405,15 @@ router.post('/routes/custom-plan', optionalAuth, async (req, res) => {
         waypoints.push([Number(lat.toFixed(5)), Number(lng.toFixed(5)), Number(ptG.toFixed(3)), 58]);
       }
 
-      // Compute realistic smoothness, FSD comfort, and body wear based on road geometry & turns
+      // Compute realistic smoothness, FSD comfort, body wear, and FHWA HPMS IRI based on road geometry & turns
       const turnDensity = turnCount / Math.max(1, distanceMiles);
+      const hpmsEst = estimateUsHighwayIriForRoute({
+        stepNames,
+        turnCount,
+        distanceMiles,
+        routeIdx: idx,
+        nearbyHazardPenalties
+      });
       const baseSmoothness = Math.round(
         Math.max(42, Math.min(97, 94 - idx * 14 - turnDensity * 8 - nearbyHazardPenalties))
       );
@@ -392,6 +425,7 @@ router.post('/routes/custom-plan', optionalAuth, async (req, res) => {
       const peakVertG = Number((0.16 + (100 - baseSmoothness) * 0.0095).toFixed(2));
       const peakLatG = Number((0.14 + Math.min(0.32, turnDensity * 0.08)).toFixed(2));
       const peakLonG = Number((0.15 + Math.min(0.35, turnDensity * 0.09)).toFixed(2));
+      const iriInfo = normalizedGToIri(avgVertG);
 
       const fsdGrade =
         baseFsdScore >= 92
@@ -437,14 +471,17 @@ router.post('/routes/custom-plan', optionalAuth, async (req, res) => {
         peakLateralG: peakLatG,
         peakLongitudinalG: peakLonG,
         normalizedRoadRoughnessG: avgVertG,
+        iriInchesPerMile: iriInfo.iriInchesPerMile || hpmsEst.iriInchesPerMile,
+        iriMetersPerKm: iriInfo.iriMetersPerKm || hpmsEst.iriMetersPerKm,
+        fhwaRating: iriInfo.fhwaRating || hpmsEst.fhwaRating,
         avgJerkGPerSec: Number((0.2 + (100 - baseSmoothness) * 0.018).toFixed(2)),
         vdvScore: Number((1.6 + (100 - baseSmoothness) * 0.14).toFixed(2)),
         spineShockCount: Math.max(0, Math.round((100 - baseSmoothness) / 8)),
         fsdNotes:
           baseFsdScore >= 82
-            ? `Recommended FSD corridor via ${summaryRoads}: low maneuver density (${turnCount} turns) and minimal vertical G-load.`
-            : `Alternative path via ${summaryRoads} (${turnCount} turns); higher lateral/longitudinal transitions.`,
-        surfaceType: baseSmoothness >= 82 ? 'Highway Smooth Asphalt' : 'Mixed Arterial Pavement',
+            ? `Recommended FSD corridor via ${summaryRoads} (Est. FHWA IRI ${iriInfo.iriInchesPerMile} in/mi • ${iriInfo.fhwaRating}): low maneuver density (${turnCount} turns) and minimal vertical G-load.`
+            : `Alternative path via ${summaryRoads} (Est. FHWA IRI ${iriInfo.iriInchesPerMile} in/mi • ${iriInfo.fhwaRating}, ${turnCount} turns); higher lateral/longitudinal transitions.`,
+        surfaceType: baseSmoothness >= 82 ? `Highway Smooth Asphalt (IRI ${iriInfo.iriInchesPerMile} in/mi)` : `Mixed Arterial Pavement (IRI ${iriInfo.iriInchesPerMile} in/mi)`,
         waypoints,
         sampleTripsCount: 1,
         upvotes: 1
@@ -501,36 +538,6 @@ router.post('/routes/custom-plan', optionalAuth, async (req, res) => {
 
       return routeObj;
     });
-
-    // If OSRM only returned 1 geometry, synthesize a secondary surface/fast comparison so user can compare
-    if (candidateRoutes.length === 1) {
-      const primary = candidateRoutes[0];
-      const alt = {
-        ...primary,
-        id: primary.id + 999,
-        slug: `${primary.slug}-alt`,
-        name: `${originGeo.displayName} → ${destGeo.displayName} (Secondary Arterial Alternative)`,
-        estimatedMinutes: Number((primary.estimatedMinutes * 1.12).toFixed(1)),
-        distanceMiles: Number((primary.distanceMiles * 0.96).toFixed(1)),
-        smoothnessScore: Math.max(48, primary.smoothnessScore - 24),
-        fsdComfortScore: Math.max(45, primary.fsdComfortScore - 26),
-        fsdGrade: 'C Moderate Roughness',
-        bodyWearScore: Math.min(85, primary.bodyWearScore + 34),
-        bodyWearGrade: 'High Body Wear',
-        avgVerticalG: Number((primary.avgVerticalG * 2.3).toFixed(3)),
-        peakVerticalG: Number((primary.peakVerticalG * 2.4).toFixed(2)),
-        normalizedRoadRoughnessG: Number((primary.normalizedRoadRoughnessG * 2.3).toFixed(3)),
-        fsdNotes: 'Shorter distance surface alternative with higher intersection braking and utility trench roughness.',
-        surfaceType: 'Urban Arterial Patchwork',
-        waypoints: primary.waypoints.map((wp, i) => [
-          wp[0] + (i > 0 && i < primary.waypoints.length - 1 ? 0.008 : 0),
-          wp[1] - (i > 0 && i < primary.waypoints.length - 1 ? 0.008 : 0),
-          Number((wp[2] * 2.2).toFixed(3)),
-          40
-        ])
-      };
-      candidateRoutes.push(alt);
-    }
 
     const ranked = rankRoutesForDriver(candidateRoutes, mode, vehicle);
     return res.json({

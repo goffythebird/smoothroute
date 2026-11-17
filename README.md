@@ -7,9 +7,9 @@
 [![Tesla FSD Ready](https://img.shields.io/badge/Tesla_FSD-Smooth_Route_Optimized-6366f1.svg)](#tesla-fsd-smooth-route-planner)
 
 **SmoothRoute** is an open-source full-stack web & mobile Progressive Web App (PWA) that allows drivers to:
-1. **Sign up & create an account** with their specific **car & suspension profile** (Tesla Model 3 Highland, Model Y, Model S Air, Model X, Cybertruck, Rivian R1S, BMW i4, Toyota Prius, Porsche 911, or custom vehicles).
+1. **Sign up & create an account** with their specific **car, RV, or truck suspension profile** (Tesla Model 3 Highland, Model Y, Model S Air, Model X, Cybertruck, Rivian R1S, BMW i4, Toyota Prius, Porsche 911, Mercedes-Benz Sprinter Camper Van, Class A/C Motorhomes, Ford F-250 Fifth-Wheel Tow Rig, Lexus/Mercedes Spine-Saver Sedan, or custom vehicles).
 2. **Track real-time 3-axis G-forces with their phone** (`DeviceMotionEvent` accelerometer + `Geolocation` GPS + 3-axis phone mount angle zeroing) as they travel.
-3. **Normalize G-forces based on their car's suspension & tire sidewall** so the public map accurately reflects true road roughness while predicting exact cabin G-loads for any driver's specific car.
+3. **Normalize G-forces based on their car's suspension & tire sidewall** (and convert bidirectionally with **USDOT FHWA HPMS International Roughness Index — IRI in `in/mi`**) so the public map accurately reflects true road roughness while predicting exact cabin G-loads for any driver's specific car.
 4. **Quantify cumulative human body wear** using **ISO 2631-1 Whole-Body Vibration (WBV)**, **4th-Power Vibration Dose Value ($\text{VDV}$)**, **3D Jerk ($\text{G/s}$)**, and **Spinal Compression Micro-Shocks**.
 5. **Optimize routes for Tesla Full Self-Driving (FSD) & driver comfort**, helping drivers avoid high-G potholes, sunken bridge expansion joints, concrete slab harmonic bounce, and abrupt FSD deceleration zones in favor of ultra-smooth corridors.
 
@@ -116,7 +116,9 @@ npm run audit:secrets
 | `GET` | `/api/trips` | List public community trips or personal trip history |
 | `GET` | `/api/trips/:id/export` | Export trip telemetry in `csv`, `gpx`, or `json` format |
 | `GET` | `/api/routes` | List public routes scored for active vehicle & routing mode |
+| `GET` | `/api/routes/us-hpms-baselines` | Nationwide USDOT FHWA HPMS (IRI `in/mi`) & OSM baseline corridors |
 | `POST` | `/api/routes/compare` | Compare corridor routes for Tesla FSD & body wear reduction |
+| `POST` | `/api/routes/custom-plan` | Plan & score any real-world US origin/destination via OSRM + HPMS IRI |
 | `GET` | `/api/hazards` | List GPS-pinned high-G road hazards (potholes, joints, brakes) |
 | `POST` | `/api/hazards` | Report a new high-G road hazard to the public map |
 | `GET` | `/api/analytics/summary` | Platform totals, top smooth routes & car suspension benchmarks |

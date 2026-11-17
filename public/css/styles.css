@@ -746,7 +746,7 @@ input:focus, select:focus, textarea:focus {
   /* Fixed iOS-style Bottom Thumb Bar */
   .mobile-bottom-nav {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     position: fixed;
     bottom: 0;
     left: 0;

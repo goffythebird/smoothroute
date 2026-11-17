@@ -10,6 +10,7 @@
  */
 
 const G0 = 9.80665; // Standard gravity in m/s^2
+const { iriToNormalizedMetrics, normalizedGToIri } = require('./usHighwayBaselines');
 
 /**
  * Pre-configured vehicle catalog with realistic suspension damping & chassis transfer factors.
@@ -228,6 +229,101 @@ const VEHICLE_TEMPLATES = [
     lateralRollFactor: 0.68,
     seatIsolationFactor: 1.05,
     description: 'High-precision stiff sports chassis; transmits high vertical G on broken city asphalt.'
+  },
+  {
+    id: 'mercedes-sprinter-camper-2500',
+    make: 'Mercedes-Benz',
+    model: 'Sprinter 2500 Camper Van',
+    year: 2025,
+    trim: '170" WB AWD Adventure Conversion',
+    category: 'RV / Camper Van',
+    suspensionType: 'rv_camper_van',
+    suspensionLabel: 'Heavy-Duty Van Strut / Rear Leaf Pack',
+    wheelDiameterInches: 17,
+    tireSidewallRatio: 70,
+    curbWeightLbs: 8400,
+    supportsFsd: false,
+    fsdHardware: 'DISTRONIC Highway Assist',
+    suspensionDampingFactor: 1.14,
+    lateralRollFactor: 1.22,
+    seatIsolationFactor: 0.96,
+    description: 'High-roof camper conversion; sensitive to bridge joint cabinetry rattle and highway crosswind roll.'
+  },
+  {
+    id: 'class-a-diesel-pusher-40ft',
+    make: 'Newmar / Tiffin',
+    model: '40ft Class A Diesel Pusher',
+    year: 2025,
+    trim: 'Full Air-Ride Coach (22.5" Commercial)',
+    category: 'Class A Motorhome',
+    suspensionType: 'rv_air_coach',
+    suspensionLabel: '8-Bag Heavy Coach Air Suspension + ComfortSteer',
+    wheelDiameterInches: 22.5,
+    tireSidewallRatio: 70,
+    curbWeightLbs: 36500,
+    supportsFsd: false,
+    fsdHardware: 'Highway Lane Assist',
+    suspensionDampingFactor: 0.94,
+    lateralRollFactor: 1.18,
+    seatIsolationFactor: 0.88,
+    description: 'Plush air bags over normal ripples, but long overhang pitches violently on sunken interstate viaduct joints.'
+  },
+  {
+    id: 'class-c-motorhome-e450',
+    make: 'Winnebago / Jayco',
+    model: '31ft Class C Motorhome',
+    year: 2025,
+    trim: 'Ford E-450 Cutaway Chassis (Dual Rear Wheel)',
+    category: 'Class C Motorhome',
+    suspensionType: 'truck_leaf',
+    suspensionLabel: 'Heavy-Duty Commercial Twin-I-Beam / Multi-Leaf',
+    wheelDiameterInches: 16,
+    tireSidewallRatio: 75,
+    curbWeightLbs: 14200,
+    supportsFsd: false,
+    fsdHardware: 'Adaptive Cruise',
+    suspensionDampingFactor: 1.32,
+    lateralRollFactor: 1.25,
+    seatIsolationFactor: 1.02,
+    description: 'Stiff commercial cutaway leaf springs transmit severe vertical jounce to coach cabinetry and spine.'
+  },
+  {
+    id: 'ford-f250-fifth-wheel-tow',
+    make: 'Ford',
+    model: 'F-250 Super Duty (Fifth-Wheel Rig)',
+    year: 2025,
+    trim: 'PowerStroke 4x4 + 35ft Fifth-Wheel Trailer',
+    category: 'Heavy Tow Rig',
+    suspensionType: 'truck_leaf',
+    suspensionLabel: 'Solid Front Axle + Heavy Tow Leaf Pack',
+    wheelDiameterInches: 20,
+    tireSidewallRatio: 60,
+    curbWeightLbs: 18500,
+    supportsFsd: false,
+    fsdHardware: 'BlueCruise Tow Mode',
+    suspensionDampingFactor: 1.26,
+    lateralRollFactor: 1.08,
+    seatIsolationFactor: 0.99,
+    description: '3/4-ton tow suspension experiences longitudinal pin-box "chucking" on spaced concrete highway slabs.'
+  },
+  {
+    id: 'lexus-ls500h-spine-saver',
+    make: 'Lexus / Mercedes',
+    model: 'LS 500h / S-Class Spine-Saver',
+    year: 2025,
+    trim: 'Executive Adaptive Air + Orthopedic Seat Isolation',
+    category: 'Medical / Spine-Saver Sedan',
+    suspensionType: 'air_adaptive',
+    suspensionLabel: 'Road-Preview Active Air Suspension (18" Touring)',
+    wheelDiameterInches: 18,
+    tireSidewallRatio: 50,
+    curbWeightLbs: 4920,
+    supportsFsd: false,
+    fsdHardware: 'Teammate / Drive Pilot',
+    suspensionDampingFactor: 0.74,
+    lateralRollFactor: 0.82,
+    seatIsolationFactor: 0.82,
+    description: 'Maximum vertical shock isolation for sciatica, post-surgery recovery, and chronic lumbar protection.'
   }
 ];
 
@@ -247,11 +343,13 @@ function computeVehicleTransferFactor(vehicle = {}) {
   const suspensionBase = {
     air_adaptive: 0.80,
     frequency_selective_damping: 0.92,
+    rv_air_coach: 0.94,
     coil_comfort: 0.95,
     coil_standard: 1.00,
+    rv_camper_van: 1.14,
+    truck_leaf: 1.15,
     adaptive_sport: 1.18,
     coil_sport: 1.24,
-    truck_leaf: 1.15,
     track_stiff: 1.38
   }[vehicle.suspensionType] || 1.00;
 
@@ -572,6 +670,8 @@ function analyzeTripBiomechanics(samples = [], vehicle = {}) {
     fsdRecommendation = 'Excellent smooth pavement and predictable geometry; highly recommended for Tesla FSD.';
   }
 
+  const iriEstimate = normalizedGToIri(normalizedRoadRoughnessG);
+
   return {
     sampleCount: n,
     durationSec: Number(totalDtSec.toFixed(1)),
@@ -584,6 +684,9 @@ function analyzeTripBiomechanics(samples = [], vehicle = {}) {
     rmsGVert: Number(rmsGVert.toFixed(3)),
     rmsGTotal: Number(rmsGTotal.toFixed(3)),
     normalizedRoadRoughnessG: Number(normalizedRoadRoughnessG.toFixed(3)),
+    estimatedIriInchesPerMile: iriEstimate.iriInchesPerMile,
+    estimatedIriMetersPerKm: iriEstimate.iriMetersPerKm,
+    fhwaRating: iriEstimate.fhwaRating,
     peakJerkGPerSec: Number(peakJerk.toFixed(2)),
     avgJerkGPerSec: Number(avgJerkGPerSec.toFixed(2)),
     isoWeightedRmsMps2: Number(isoWeightedRmsMps2.toFixed(3)),
@@ -629,6 +732,8 @@ function predictRouteForVehicle(route, vehicle = {}) {
   const predictedSmoothnessScore = Math.round(Math.max(5, Math.min(100, baseSmoothness - roughnessDelta)));
   const predictedFsdScore = Math.round(Math.max(5, Math.min(100, baseFsdScore - roughnessDelta * 0.9)));
 
+  const iriEstimate = normalizedGToIri(baseRmsVert);
+
   return {
     vehicleName: vehicle.make ? `${vehicle.year || ''} ${vehicle.make} ${vehicle.model}`.trim() : 'Standard Reference Car',
     suspensionDampingFactor: kVert,
@@ -638,6 +743,9 @@ function predictRouteForVehicle(route, vehicle = {}) {
     predictedBodyWearScore,
     predictedSmoothnessScore,
     predictedFsdScore,
+    estimatedIriInchesPerMile: route.iriInchesPerMile || iriEstimate.iriInchesPerMile,
+    estimatedIriMetersPerKm: iriEstimate.iriMetersPerKm,
+    fhwaRating: iriEstimate.fhwaRating,
     comfortDeltaVsBaseline: Math.round(predictedSmoothnessScore - baseSmoothness)
   };
 }
@@ -798,5 +906,7 @@ module.exports = {
   predictRouteForVehicle,
   detectGForceHazards,
   rankRoutesForDriver,
-  haversineMiles
+  haversineMiles,
+  iriToNormalizedMetrics,
+  normalizedGToIri
 };

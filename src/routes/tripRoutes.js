@@ -271,8 +271,16 @@ router.post('/', optionalAuth, (req, res) => {
     const db = getDb();
     let userId = req.user && req.user.userId ? req.user.userId : null;
     if (!userId) {
-      const fallbackUser = db.prepare('SELECT id FROM users ORDER BY id ASC LIMIT 1').get();
-      userId = fallbackUser ? fallbackUser.id : 1;
+      let guestUser = db.prepare("SELECT id FROM users WHERE username = 'guest_driver' LIMIT 1").get();
+      if (!guestUser) {
+        const ins = db.prepare(`
+          INSERT INTO users (username, email, password_hash, display_name, driver_mode_preference, fsd_driver)
+          VALUES ('guest_driver', 'guest@local', 'guest', 'Anonymous Driver', 'fsd_smooth', 1)
+        `).run();
+        userId = Number(ins.lastInsertRowid);
+      } else {
+        userId = guestUser.id;
+      }
     }
     const {
       vehicleId,

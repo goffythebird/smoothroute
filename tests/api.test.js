@@ -45,13 +45,13 @@ test.after(async () => {
   }
 });
 
-test('1. Health & Seeded Public Data check', async () => {
+test('1. Health & Clean Database check (zero fake data)', async () => {
   const res = await fetch(`${baseUrl}/api/health`);
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.status, 'ok');
-  assert.ok(body.stats.publicRoutes >= 7);
-  assert.ok(body.stats.mappedHazards >= 6);
+  assert.equal(body.stats.publicRoutes, 0);
+  assert.equal(body.stats.mappedHazards, 0);
 });
 
 test('2. User Sign Up creates user account and primary calibrated Tesla vehicle', async () => {
@@ -209,6 +209,6 @@ test('7. FSD Smooth Route Planner & Comparator returns vehicle-specific ranked r
   assert.equal(compRes.status, 200);
   const compData = await compRes.json();
   assert.ok(compData.recommendedRoute);
-  assert.equal(compData.recommendedRoute.slug, 'i280-junipero-serra-fsd-smooth');
+  assert.equal(compData.recommendedRoute.title || compData.recommendedRoute.name, 'E2E Test FSD Telemetry Run');
   assert.ok(compData.crossCarComparison.length >= 5);
 });
