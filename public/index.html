@@ -19,8 +19,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="SmoothRoute" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="description" content="Track your car's G-forces with your phone and find smoother routes with less body wear." />
-  <title>SmoothRoute — Car G-Force Tracker &amp; Smooth Route Finder</title>
+  <meta name="description" content="One-tap car G-force recorder and smooth route map. No login required." />
+  <title>SmoothRoute — 1-Tap G-Force Recorder &amp; Smooth Map</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
   <link rel="apple-touch-icon" href="/icons/icon.svg" />
@@ -33,58 +33,47 @@
       <img src="/icons/icon.svg" alt="SmoothRoute" class="brand-logo" />
       <div>
         <span class="brand-title">SmoothRoute</span>
-        <span class="brand-subtitle">Phone G-Force Tracker &amp; Smooth Route Finder</span>
+        <span class="brand-subtitle">1-Tap Car G-Force Recorder • No Login Needed</span>
       </div>
     </div>
 
     <nav class="nav-tabs" role="tablist">
-      <button class="nav-tab active" data-tab="cockpit">📡 Track Drive</button>
+      <button class="nav-tab active" data-tab="cockpit">🔴 Record Drive</button>
       <button class="nav-tab" data-tab="planner">🗺️ Smooth Map</button>
-      <button class="nav-tab" data-tab="account">👤 Car &amp; Account</button>
     </nav>
-
-    <div class="header-actions">
-      <button class="user-pill" id="headerAuthBtn">Sign Up / Log In</button>
-    </div>
   </header>
 
   <main class="main-container">
-    <!-- TAB 1: TRACK DRIVE (DEFAULT) -->
+    <!-- TAB 1: 1-TAP RECORD DRIVE (DEFAULT) -->
     <section class="tab-panel active" id="tab-cockpit">
       <div class="cockpit-grid">
         <div class="card">
-          <div class="card-header">
-            <div class="card-title">📡 Track G-Force With Your Phone</div>
-            <span class="badge badge-splus" id="sensorStatusBadge">Ready</span>
-          </div>
-
-          <!-- Car Selection -->
+          <!-- Car Picker (Saved Automatically to Phone) -->
           <div class="form-group" style="margin-bottom:0.85rem;">
-            <label for="activeCarSelect">Your Car (Calibrates Suspension Stiffness)</label>
+            <label for="activeCarSelect">1. Pick Your Car</label>
             <select id="activeCarSelect"></select>
           </div>
 
-          <!-- Big Primary Drive Controls -->
-          <div style="display:flex; flex-direction:column; gap:0.55rem; margin-bottom:1rem;">
-            <button class="btn btn-primary btn-xl-drive" id="btnStartPhoneSensors" style="width:100%;">
-              ▶️ Start Drive Recording
+          <!-- SINGLE GIANT 1-TAP RECORD / STOP BUTTON -->
+          <div style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:1rem;">
+            <button
+              class="btn btn-primary"
+              id="btnOneTapRecord"
+              style="width:100%; min-height:68px; font-size:1.18rem; font-weight:800; border-radius:14px; box-shadow:0 6px 24px rgba(16,185,129,0.35);"
+            >
+              🔴 TAP TO START RECORDING
             </button>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
-              <button class="btn btn-outline" id="btnCalibrateMount">
-                📐 Zero Phone Mount
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.76rem; color:var(--text-secondary); padding:0 0.2rem;">
+              <span id="sensorStatusBadge">Ready — auto-calibrates mount on start</span>
+              <button type="button" class="btn btn-outline btn-sm" id="btnCalibrateMount" style="padding:0.25rem 0.6rem; min-height:30px; font-size:0.72rem;">
+                📐 Re-Zero Mount
               </button>
-              <button class="btn btn-danger" id="btnStopAndSaveTrip" disabled>
-                ⏹️ Stop &amp; Save Drive
-              </button>
-            </div>
-            <div style="font-size:0.75rem; color:var(--text-secondary); text-align:center;" id="mountCalibrationInfo">
-              Place phone in car mount and tap "Zero Phone Mount" before driving.
             </div>
           </div>
 
-          <!-- Live G-Ball & 4 Clean Readouts -->
+          <!-- Live G-Ball & 4 Big Numbers -->
           <div class="gball-container">
-            <canvas id="gBallCanvas" width="240" height="240"></canvas>
+            <canvas id="gBallCanvas" width="230" height="230"></canvas>
 
             <div class="live-readout-grid" style="grid-template-columns: repeat(2, 1fr);">
               <div class="readout-box">
@@ -100,44 +89,39 @@
                 <div class="r-val" id="liveGLon" style="color:#38bdf8;">0.00G</div>
               </div>
               <div class="readout-box">
-                <div class="r-label">Cornering (Lateral G)</div>
+                <div class="r-label">Cornering G</div>
                 <div class="r-val" id="liveGLat" style="color:#a78bfa;">0.00G</div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Right: Live Waveform, Optional Route Label & Saved Trip Result -->
+        <!-- Right: Live Timeline & Saved Drives (No Login Needed) -->
         <div style="display:flex; flex-direction:column; gap:1rem;">
-          <div class="card">
+          <div class="card" id="latestTripReportCard" style="display:none; border-color:var(--accent-emerald);">
             <div class="card-header">
-              <div class="card-title">📈 Live G-Force Timeline</div>
-              <span style="font-size:0.75rem; color:var(--text-secondary);" id="liveSampleCounter">0 samples</span>
-            </div>
-            <canvas id="waveformCanvas" width="760" height="190"></canvas>
-
-            <div class="controls-bar" style="margin-top:0.85rem; margin-bottom:0;">
-              <div class="form-group">
-                <label for="tripTitleInput">Route / Drive Name (Optional)</label>
-                <input type="text" id="tripTitleInput" placeholder="e.g. Morning Commute" />
-              </div>
-              <div class="form-group">
-                <label for="tripDriveModeSelect">Drive Mode</label>
-                <select id="tripDriveModeSelect">
-                  <option value="FSD Supervised">Tesla FSD Supervised</option>
-                  <option value="Autopilot">Autopilot</option>
-                  <option value="Manual">Manual Driving</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div class="card" id="latestTripReportCard" style="display:none;">
-            <div class="card-header">
-              <div class="card-title">✅ Drive Summary</div>
+              <div class="card-title">✅ Drive Saved to Map</div>
               <span class="badge badge-splus" id="reportFsdGradeBadge">Saved</span>
             </div>
             <div id="latestTripReportBody"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">📈 Live G-Force Timeline</div>
+              <span style="font-size:0.78rem; color:var(--text-secondary);" id="liveSampleCounter">00:00 • 0 pts</span>
+            </div>
+            <canvas id="waveformCanvas" width="760" height="175"></canvas>
+            <div class="form-group" style="margin-top:0.75rem;">
+              <input type="text" id="tripTitleInput" placeholder="Optional road or trip name (auto-named if left blank)" />
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">📊 Recent Recorded Drives</div>
+            </div>
+            <div id="tripsFeedContainer" style="display:flex; flex-direction:column; gap:0.6rem;"></div>
           </div>
         </div>
       </div>
@@ -149,13 +133,13 @@
         <div class="form-group">
           <label for="customOriginInput">Start Location</label>
           <div style="display:flex; gap:0.4rem;">
-            <input type="text" id="customOriginInput" placeholder="Enter start address or city" style="flex:1;" />
+            <input type="text" id="customOriginInput" placeholder="Start address or city" style="flex:1;" />
             <button type="button" class="btn btn-outline btn-sm" id="btnUseMyLocationOrigin">📍 GPS</button>
           </div>
         </div>
         <div class="form-group">
           <label for="customDestInput">Destination</label>
-          <input type="text" id="customDestInput" placeholder="Enter destination address or city" />
+          <input type="text" id="customDestInput" placeholder="Destination address or city" />
         </div>
         <div class="form-group" style="justify-content:flex-end;">
           <label>&nbsp;</label>
@@ -166,12 +150,12 @@
       <div class="planner-grid">
         <div class="card">
           <div class="card-header">
-            <div class="card-title">🗺️ OpenStreetMap — Recorded Routes &amp; Road Bumps</div>
+            <div class="card-title">🗺️ OpenStreetMap — Smooth &amp; Rough Roads</div>
             <button class="btn btn-outline btn-sm" id="btnCenterMyGps">📍 My Location</button>
           </div>
           <div id="routeMap"></div>
           <div class="map-legend">
-            <span><i class="legend-dot" style="background:#10b981;"></i>Smooth Route</span>
+            <span><i class="legend-dot" style="background:#10b981;"></i>Smooth (&lt;0.08G)</span>
             <span><i class="legend-dot" style="background:#f59e0b;"></i>Moderate</span>
             <span><i class="legend-dot" style="background:#ef4444;"></i>Rough / High G</span>
           </div>
@@ -179,110 +163,23 @@
 
         <div class="card">
           <div class="card-header">
-            <div class="card-title">🛣️ Routes &amp; Recorded Drives</div>
+            <div class="card-title">🛣️ Recorded Routes</div>
           </div>
           <div class="route-cards-list" id="routeCardsContainer"></div>
         </div>
       </div>
     </section>
-
-    <!-- TAB 3: ACCOUNT & MY CAR -->
-    <section class="tab-panel" id="tab-account">
-      <div class="two-col-grid">
-        <!-- Account Sign Up / Log In -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">👤 User Account</div>
-            <span class="badge badge-info" id="accountStatusBadge">Not Signed In</span>
-          </div>
-
-          <div id="authFormsWrapper">
-            <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
-              <button class="btn btn-primary btn-sm" id="btnShowSignupForm">Sign Up</button>
-              <button class="btn btn-outline btn-sm" id="btnShowLoginForm">Log In</button>
-            </div>
-
-            <form id="signupForm" style="display:flex; flex-direction:column; gap:0.75rem;">
-              <div class="form-group">
-                <label for="suDisplayName">Name</label>
-                <input type="text" id="suDisplayName" placeholder="Your name" required />
-              </div>
-              <div class="form-group">
-                <label for="suUsername">Username</label>
-                <input type="text" id="suUsername" placeholder="username" required />
-              </div>
-              <div class="form-group">
-                <label for="suEmail">Email</label>
-                <input type="email" id="suEmail" placeholder="you@example.com" required />
-              </div>
-              <div class="form-group">
-                <label for="suPassword">Password (min 6 chars)</label>
-                <input type="password" id="suPassword" placeholder="••••••••" required />
-              </div>
-              <div class="form-group">
-                <label for="suCarTemplate">Your Car</label>
-                <select id="suCarTemplate"></select>
-              </div>
-              <button type="submit" class="btn btn-primary">Create Account</button>
-            </form>
-
-            <form id="loginForm" style="display:none; flex-direction:column; gap:0.75rem;">
-              <div class="form-group">
-                <label for="liIdentifier">Username or Email</label>
-                <input type="text" id="liIdentifier" placeholder="Username or email" required />
-              </div>
-              <div class="form-group">
-                <label for="liPassword">Password</label>
-                <input type="password" id="liPassword" placeholder="••••••••" required />
-              </div>
-              <button type="submit" class="btn btn-primary">Log In</button>
-            </form>
-          </div>
-
-          <div id="loggedInProfileWrapper" style="display:none; flex-direction:column; gap:0.85rem;">
-            <div style="padding:0.9rem; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); border-radius:10px;">
-              <div style="font-size:1.05rem; font-weight:700;" id="profileDisplayName">-</div>
-              <div style="font-size:0.82rem; color:var(--text-secondary);" id="profileEmailLine">-</div>
-            </div>
-            <button class="btn btn-outline" id="btnLogout">Log Out</button>
-          </div>
-        </div>
-
-        <!-- My Car & Recorded Trips -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">🚗 My Garage &amp; Recorded Drives</div>
-          </div>
-
-          <div id="userGarageList" style="margin-bottom:1rem;"></div>
-
-          <div style="display:flex; gap:0.5rem; margin-bottom:1.2rem;">
-            <select id="garageTemplateSelect" style="flex:1;"></select>
-            <button class="btn btn-outline btn-sm" id="btnAddGarageVehicle">+ Add Car</button>
-          </div>
-
-          <div class="card-header" style="margin-bottom:0.6rem;">
-            <div class="card-title" style="font-size:0.92rem;">📊 Recorded Drives</div>
-          </div>
-          <div id="tripsFeedContainer" style="display:flex; flex-direction:column; gap:0.65rem;"></div>
-        </div>
-      </div>
-    </section>
   </main>
 
-  <!-- Fixed Mobile Bottom Navigation Bar -->
-  <nav class="mobile-bottom-nav" aria-label="Mobile Navigation">
+  <!-- Fixed 2-Button Mobile Bottom Navigation Bar -->
+  <nav class="mobile-bottom-nav" style="grid-template-columns: repeat(2, 1fr);" aria-label="Mobile Navigation">
     <button class="mobile-nav-btn active" data-tab="cockpit">
-      <span class="m-icon">📡</span>
-      <span>Track Drive</span>
+      <span class="m-icon">🔴</span>
+      <span>Record Drive</span>
     </button>
     <button class="mobile-nav-btn" data-tab="planner">
       <span class="m-icon">🗺️</span>
       <span>Smooth Map</span>
-    </button>
-    <button class="mobile-nav-btn" data-tab="account">
-      <span class="m-icon">👤</span>
-      <span>Car &amp; Account</span>
     </button>
   </nav>
 

@@ -1,17 +1,13 @@
 /**
- * SmoothRoute — Clean, Real-Data Car & Phone G-Force Tracker & Smooth Route Finder
+ * SmoothRoute — 1-Tap Phone G-Force Recorder & Smooth Map (Zero Login Needed)
  */
 
 (function () {
   const G0 = 9.80665;
 
   const state = {
-    token: localStorage.getItem('sr_token') || null,
-    user: null,
     templates: [],
-    vehicles: [],
-    activeVehicleTemplateId: 'tesla-model-y-lr',
-    activeVehicleId: null,
+    activeVehicleTemplateId: localStorage.getItem('sr_car_template') || 'tesla-model-y-lr',
     routes: [],
     hazards: [],
     trips: [],
@@ -24,11 +20,14 @@
       },
       mountAngles: { pitchDeg: 70.0, rollDeg: 0.0 }
     },
-    isRecordingPhone: false,
+    hasAutoCalibrated: false,
+    isRecording: false,
+    recordStartMs: 0,
+    heartbeatTimer: null,
     recordedSamples: [],
     waveformHistory: [],
-    gBallTrail: [],
     liveCurrent: { gLon: 0, gLat: 0, gVert: 0, gTotal: 0, peakG: 0 },
+    latestTransformed: { gLon: 0, gLat: 0, gVert: 0 },
     rawMotionBuffer: [],
     geoWatchId: null,
     currentGps: { lat: null, lng: null, speedMph: 0 }
@@ -47,18 +46,17 @@
     else if (type === 'warn') el.style.borderLeftColor = '#f59e0b';
     el.textContent = msg;
     container.appendChild(el);
-    setTimeout(() => el.remove(), 3800);
+    setTimeout(() => el.remove(), 3500);
   }
 
   async function apiFetch(url, options = {}) {
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(options.headers || {})
-    };
-    if (state.token) {
-      headers.Authorization = `Bearer ${state.token}`;
-    }
-    const res = await fetch(url, { ...options, headers });
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+      }
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || `Request failed (${res.status})`);
@@ -82,13 +80,50 @@
     }
   }
 
-  // --- OpenStreetMap Initialization ---
+  // --- Local 3-Axis Calibration Helper ---
+  function computeLocalCalibration(samples) {
+    let sumX = 0, sumY = 0, sumZ = 0;
+    for (const s of samples) {
+      sumX += Number(s.ax) || 0;
+      sumY += Number(s.ay) || 0;
+      sumZ += Number(s.az) || 0;
+    }
+    const n = Math.max(1, samples.length);
+    const gx = sumX / n;
+    const gy = sumY / n;
+    const gz = sumZ / n;
+    const mag = Math.hypot(gx, gy, gz) || G0;
+    const eVert = [gx / mag, gy / mag, gz / mag];
+    let refLat = Math.abs(eVert[0]) > 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const dotLat = refLat[0] * eVert[0] + refLat[1] * eVert[1] + refLat[2] * eVert[2];
+    let eLat = [
+      refLat[0] - dotLat * eVert[0],
+      refLat[1] - dotLat * eVert[1],
+      refLat[2] - dotLat * eVert[2]
+    ];
+    const latMag = Math.hypot(eLat[0], eLat[1], eLat[2]) || 1;
+    eLat = [eLat[0] / latMag, eLat[1] / latMag, eLat[2] / latMag];
+    const eLon = [
+      eVert[1] * eLat[2] - eVert[2] * eLat[1],
+      eVert[2] * eLat[0] - eVert[0] * eLat[2],
+      eVert[0] * eLat[1] - eVert[1] * eLat[0]
+    ];
+    const pitchDeg = Number((Math.atan2(gy, gz) * (180 / Math.PI)).toFixed(1));
+    const rollDeg = Number((Math.atan2(-gx, Math.hypot(gy, gz)) * (180 / Math.PI)).toFixed(1));
+    return {
+      gravityBaseline: { gx, gy, gz, magnitude: mag },
+      basis: { eLat, eLon, eVert },
+      mountAngles: { pitchDeg, rollDeg }
+    };
+  }
+
+  // --- OpenStreetMap ---
   function initMap() {
     const mapContainer = document.getElementById('routeMap');
     if (!mapContainer || typeof L === 'undefined') return;
 
     map = L.map('routeMap', {
-      center: [39.8283, -98.5795], // US center until GPS or routes load
+      center: [39.8283, -98.5795],
       zoom: 4,
       zoomControl: true
     });
@@ -117,8 +152,8 @@
       latLngs.forEach((ll) => allCoords.push(ll));
 
       const pred = route.vehiclePrediction || {};
-      const fsdScore = pred.predictedFsdScore ?? route.fsdComfortScore;
-      const routeColor = fsdScore >= 85 ? '#10b981' : fsdScore >= 65 ? '#f59e0b' : '#ef4444';
+      const smooth = pred.predictedSmoothnessScore ?? route.smoothnessScore;
+      const routeColor = smooth >= 85 ? '#10b981' : smooth >= 65 ? '#f59e0b' : '#ef4444';
 
       const poly = L.polyline(latLngs, {
         color: routeColor,
@@ -127,12 +162,11 @@
       }).addTo(map);
 
       poly.bindPopup(`
-        <div style="color:#0f172a; min-width:190px;">
+        <div style="color:#0f172a; min-width:180px;">
           <strong>${route.name}</strong><br/>
-          Smoothness: <strong>${pred.predictedSmoothnessScore ?? route.smoothnessScore}/100</strong><br/>
+          Smoothness: <strong>${smooth}/100</strong><br/>
           Body Wear: <strong>${pred.predictedBodyWearScore ?? route.bodyWearScore}/100</strong><br/>
-          Peak Vertical G: <strong>${pred.predictedPeakVertG ?? route.peakVerticalG}G</strong><br/>
-          ${route.distanceMiles} mi • ${route.estimatedMinutes} min
+          Peak Bump: <strong>${pred.predictedPeakVertG ?? route.peakVerticalG}G</strong>
         </div>
       `);
       mapRouteLayers.push(poly);
@@ -153,7 +187,7 @@
       marker.bindPopup(`
         <div style="color:#0f172a;">
           <strong>⚠️ ${h.label}</strong><br/>
-          Peak: <strong>${h.peak_g}G</strong> (Vertical: ${h.vertical_g}G)
+          Peak: <strong>${h.peak_g}G</strong>
         </div>
       `);
       mapHazardLayers.push(marker);
@@ -173,8 +207,8 @@
     if (state.routes.length === 0) {
       container.innerHTML = `
         <div style="padding:1rem; color:var(--text-secondary); font-size:0.86rem; text-align:center; border:1px dashed var(--border-subtle); border-radius:10px;">
-          No routes recorded yet.<br/>
-          Search a Start &amp; Destination above or record a drive on the <strong>Track Drive</strong> tab.
+          No routes on map yet.<br/>
+          Tap <strong>🔴 Record Drive</strong> to record a drive or search a Start &amp; Destination above.
         </div>
       `;
       return;
@@ -191,7 +225,7 @@
         return `
           <div class="route-card ${idx === 0 ? 'recommended' : ''}" data-route-id="${r.id}">
             <div class="route-badge-row">
-              <span class="badge ${badgeCls}">${idx === 0 ? '★ Smoothest Option • ' : ''}Smoothness ${smoothScore}/100</span>
+              <span class="badge ${badgeCls}">Smoothness ${smoothScore}/100</span>
               <span style="font-size:0.78rem; color:var(--text-secondary);">${r.distanceMiles} mi • ${r.estimatedMinutes} min</span>
             </div>
             <div style="font-weight:700; font-size:0.95rem; margin-bottom:0.25rem;">${r.name}</div>
@@ -217,78 +251,18 @@
     });
   }
 
-  // --- Populate Car Selectors ---
   function populateVehicleSelectors() {
     const activeCarSel = document.getElementById('activeCarSelect');
-    const garageTplSel = document.getElementById('garageTemplateSelect');
-    const suCarSel = document.getElementById('suCarTemplate');
-
-    const tplOptions = state.templates
-      .map((t) => `<option value="${t.id}">${t.year} ${t.make} ${t.model} (${t.trim})</option>`)
-      .join('');
-
-    if (garageTplSel) garageTplSel.innerHTML = tplOptions;
-    if (suCarSel) suCarSel.innerHTML = tplOptions;
-
-    if (activeCarSel) {
-      let html = '';
-      if (state.vehicles.length > 0) {
-        html += `<optgroup label="My Saved Cars">`;
-        state.vehicles.forEach((v) => {
-          html += `<option value="user:${v.id}" ${v.isPrimary ? 'selected' : ''}>★ ${v.nickname || `${v.year} ${v.make} ${v.model}`}</option>`;
-        });
-        html += `</optgroup>`;
-      }
-      html += `<optgroup label="Car Models">`;
-      state.templates.forEach((t) => {
-        const sel = state.vehicles.length === 0 && t.id === state.activeVehicleTemplateId ? 'selected' : '';
-        html += `<option value="${t.id}" ${sel}>${t.year} ${t.make} ${t.model} — ${t.trim}</option>`;
-      });
-      html += `</optgroup>`;
-      activeCarSel.innerHTML = html;
-    }
-
-    renderGarageList();
-  }
-
-  function renderGarageList() {
-    const container = document.getElementById('userGarageList');
-    if (!container) return;
-
-    if (!state.user || state.vehicles.length === 0) {
-      container.innerHTML = `<div style="font-size:0.82rem; color:var(--text-secondary);">Sign in to save your personal cars permanently, or pick any car model on the Track Drive screen.</div>`;
-      return;
-    }
-
-    container.innerHTML = state.vehicles
+    if (!activeCarSel) return;
+    activeCarSel.innerHTML = state.templates
       .map(
-        (v) => `
-        <div style="padding:0.7rem; background:rgba(13,21,38,0.9); border:1px solid ${v.isPrimary ? 'var(--accent-emerald)' : 'var(--border-subtle)'}; border-radius:8px; display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-          <div>
-            <strong>${v.year} ${v.make} ${v.model}</strong>
-            <div style="font-size:0.75rem; color:var(--text-secondary);">${v.trim} • Damping κ=${v.suspensionDampingFactor}x</div>
-          </div>
-          <button class="btn btn-outline btn-sm btn-delete-car" data-id="${v.id}" style="color:#f87171;">Remove</button>
-        </div>
-      `
+        (t) =>
+          `<option value="${t.id}" ${t.id === state.activeVehicleTemplateId ? 'selected' : ''}>${t.year} ${t.make} ${t.model} — ${t.trim}</option>`
       )
       .join('');
-
-    container.querySelectorAll('.btn-delete-car').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        try {
-          const data = await apiFetch(`/api/vehicles/${btn.dataset.id}`, { method: 'DELETE' });
-          state.vehicles = data.vehicles;
-          populateVehicleSelectors();
-          showToast('Removed car.');
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
-    });
   }
 
-  // --- Live G-Ball & Waveform Drawing ---
+  // --- Live G-Ball & Waveform ---
   function drawCockpitCanvases() {
     drawGBall();
     drawWaveform();
@@ -332,7 +306,7 @@
     const ballColor = gTotal >= 0.5 || Math.abs(gVert) >= 0.4 ? '#ef4444' : gTotal >= 0.25 ? '#f59e0b' : '#10b981';
 
     ctx.beginPath();
-    ctx.arc(bx, by, 9, 0, Math.PI * 2);
+    ctx.arc(bx, by, 10, 0, Math.PI * 2);
     ctx.fillStyle = ballColor;
     ctx.fill();
     ctx.strokeStyle = '#ffffff';
@@ -373,10 +347,17 @@
     ctx.stroke();
   }
 
+  function formatElapsed(ms) {
+    const totalSec = Math.max(0, Math.floor(ms / 1000));
+    const min = String(Math.floor(totalSec / 60)).padStart(2, '0');
+    const sec = String(totalSec % 60).padStart(2, '0');
+    return `${min}:${sec}`;
+  }
+
   function pushLiveTelemetrySample(sample) {
-    const gLon = Number(sample.gLon.toFixed(4));
-    const gLat = Number(sample.gLat.toFixed(4));
-    const gVert = Number(sample.gVert.toFixed(4));
+    const gLon = Number((sample.gLon || 0).toFixed(4));
+    const gLat = Number((sample.gLat || 0).toFixed(4));
+    const gVert = Number((sample.gVert || 0).toFixed(4));
     const gTotal = Number(Math.hypot(gLon, gLat, gVert).toFixed(4));
     const peakG = Math.max(state.liveCurrent.peakG, gTotal);
 
@@ -402,29 +383,26 @@
     document.getElementById('liveGLon').textContent = `${gLon >= 0 ? '+' : ''}${gLon.toFixed(2)}G`;
     document.getElementById('liveGLat').textContent = `${gLat >= 0 ? '+' : ''}${gLat.toFixed(2)}G`;
     document.getElementById('livePeakG').textContent = `${peakG.toFixed(2)}G`;
-    document.getElementById('liveSampleCounter').textContent = `${state.recordedSamples.length} samples`;
+
+    const elapsedStr = formatElapsed(Date.now() - state.recordStartMs);
+    document.getElementById('liveSampleCounter').textContent = `${elapsedStr} • ${state.recordedSamples.length} pts`;
+
+    const btn = document.getElementById('btnOneTapRecord');
+    if (btn && state.isRecording) {
+      btn.textContent = `⏹️ TAP TO STOP & SAVE (${elapsedStr})`;
+    }
 
     drawCockpitCanvases();
   }
 
-  // --- Real Phone Sensor Recording ---
-  async function toggleRealPhoneSensors() {
-    const btnPhone = document.getElementById('btnStartPhoneSensors');
-    const btnSave = document.getElementById('btnStopAndSaveTrip');
-    const statusBadge = document.getElementById('sensorStatusBadge');
-
-    if (state.isRecordingPhone) {
-      window.removeEventListener('devicemotion', handleDeviceMotion);
-      if (state.geoWatchId !== null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(state.geoWatchId);
-        state.geoWatchId = null;
-      }
-      state.isRecordingPhone = false;
-      btnPhone.textContent = '▶️ Resume Drive Recording';
-      statusBadge.textContent = `Paused (${state.recordedSamples.length} pts)`;
+  // --- 1-Tap Start / Stop Recording ---
+  async function handleOneTapRecordToggle() {
+    if (state.isRecording) {
+      await stopAndSaveDrive();
       return;
     }
 
+    // Request iOS 13+ Motion Permission if required
     if (
       typeof DeviceMotionEvent !== 'undefined' &&
       typeof DeviceMotionEvent.requestPermission === 'function'
@@ -432,11 +410,11 @@
       try {
         const perm = await DeviceMotionEvent.requestPermission();
         if (perm !== 'granted') {
-          showToast('Motion sensor permission was denied.', 'error');
+          showToast('Please allow Motion & Orientation access in Safari to record G-forces.', 'error');
           return;
         }
       } catch (err) {
-        showToast(`Sensor permission error: ${err.message}`, 'error');
+        showToast(`Motion permission error: ${err.message}`, 'error');
         return;
       }
     }
@@ -461,20 +439,41 @@
 
     state.recordedSamples = [];
     state.waveformHistory = [];
+    state.rawMotionBuffer = [];
+    state.hasAutoCalibrated = false;
     state.liveCurrent = { gLon: 0, gLat: 0, gVert: 0, gTotal: 0, peakG: 0 };
-    state.isRecordingPhone = true;
-    btnPhone.textContent = '⏸️ Pause Recording';
-    btnSave.disabled = false;
-    statusBadge.textContent = 'Recording Live G-Forces';
+    state.latestTransformed = { gLon: 0, gLat: 0, gVert: 0 };
+    state.recordStartMs = Date.now();
+    state.isRecording = true;
+
+    const btn = document.getElementById('btnOneTapRecord');
+    btn.className = 'btn btn-danger';
+    btn.textContent = '⏹️ TAP TO STOP & SAVE (00:00)';
+    document.getElementById('sensorStatusBadge').textContent = 'Recording Live...';
 
     window.addEventListener('devicemotion', handleDeviceMotion);
-    showToast('Recording phone G-forces and GPS!');
+
+    // 5Hz heartbeat ensures steady sample stream even when phone is held steady
+    state.heartbeatTimer = setInterval(() => {
+      if (!state.isRecording) return;
+      pushLiveTelemetrySample({
+        timestampMs: Date.now(),
+        lat: state.currentGps.lat,
+        lng: state.currentGps.lng,
+        gLon: state.latestTransformed.gLon,
+        gLat: state.latestTransformed.gLat,
+        gVert: state.latestTransformed.gVert,
+        speedMph: state.currentGps.speedMph
+      });
+    }, 200);
+
+    showToast('Recording started! Tap the red button anytime to Stop & Save.');
   }
 
   let lastMotionProcessedMs = 0;
   function handleDeviceMotion(event) {
     const now = Date.now();
-    if (now - lastMotionProcessedMs < 80) return;
+    if (now - lastMotionProcessedMs < 60) return;
     lastMotionProcessedMs = now;
 
     const acc = event.accelerationIncludingGravity || event.acceleration;
@@ -487,6 +486,14 @@
     state.rawMotionBuffer.push({ ax, ay, az });
     if (state.rawMotionBuffer.length > 20) state.rawMotionBuffer.shift();
 
+    // Auto-zero mount orientation automatically from the first 5 readings
+    if (!state.hasAutoCalibrated && state.rawMotionBuffer.length >= 3) {
+      state.calibration = computeLocalCalibration(state.rawMotionBuffer);
+      state.hasAutoCalibrated = true;
+      document.getElementById('mountCalibrationInfo').textContent =
+        `Mount Auto-Zeroed (${state.calibration.mountAngles.pitchDeg}° tilt)`;
+    }
+
     const cal = state.calibration;
     const dx = ax - cal.gravityBaseline.gx;
     const dy = ay - cal.gravityBaseline.gy;
@@ -497,68 +504,60 @@
     const gLat = (dx * eLat[0] + dy * eLat[1] + dz * eLat[2]) / G0;
     const gVert = (dx * eVert[0] + dy * eVert[1] + dz * eVert[2]) / G0;
 
-    pushLiveTelemetrySample({
-      timestampMs: now,
-      lat: state.currentGps.lat,
-      lng: state.currentGps.lng,
-      gLon,
-      gLat,
-      gVert,
-      speedMph: state.currentGps.speedMph
-    });
+    state.latestTransformed = { gLon, gLat, gVert };
   }
 
-  async function calibratePhoneMount() {
-    if (state.rawMotionBuffer.length === 0) {
-      showToast('Start recording or move phone slightly so accelerometer is active, then tap Zero Phone Mount.', 'warn');
-    }
-    try {
-      const samples =
-        state.rawMotionBuffer.length > 0
-          ? state.rawMotionBuffer
-          : [{ ax: 0, ay: 9.215, az: 3.354 }];
-      const res = await apiFetch('/api/trips/calibrate', {
-        method: 'POST',
-        body: JSON.stringify({ samples })
-      });
-      state.calibration = res.calibration;
+  function reZeroMount() {
+    if (state.rawMotionBuffer.length > 0) {
+      state.calibration = computeLocalCalibration(state.rawMotionBuffer);
+      state.latestTransformed = { gLon: 0, gLat: 0, gVert: 0 };
       document.getElementById('mountCalibrationInfo').textContent =
-        `Calibrated (${res.calibration.mountAngles.pitchDeg}° pitch, ${res.calibration.mountAngles.rollDeg}° roll)`;
-      showToast('Phone mount zeroed!');
-    } catch (err) {
-      showToast(err.message, 'error');
+        `Re-Zeroed (${state.calibration.mountAngles.pitchDeg}° tilt)`;
+      showToast('Phone mount re-zeroed!');
+    } else {
+      showToast('Mount will auto-zero as soon as you start recording.');
     }
   }
 
-  async function finishAndSaveTrip() {
-    if (state.isRecordingPhone) {
-      window.removeEventListener('devicemotion', handleDeviceMotion);
-      if (state.geoWatchId !== null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(state.geoWatchId);
-        state.geoWatchId = null;
-      }
-      state.isRecordingPhone = false;
-      document.getElementById('btnStartPhoneSensors').textContent = '▶️ Start Drive Recording';
+  async function stopAndSaveDrive() {
+    state.isRecording = false;
+    window.removeEventListener('devicemotion', handleDeviceMotion);
+    if (state.heartbeatTimer) {
+      clearInterval(state.heartbeatTimer);
+      state.heartbeatTimer = null;
+    }
+    if (state.geoWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(state.geoWatchId);
+      state.geoWatchId = null;
     }
 
+    const btn = document.getElementById('btnOneTapRecord');
+    btn.disabled = true;
+    btn.textContent = '⏳ Saving Drive...';
+
+    // Guarantee at least 2 samples even if user double-tapped quickly
     if (state.recordedSamples.length < 2) {
-      showToast('Not enough motion samples recorded yet.', 'warn');
-      return;
+      const now = Date.now();
+      state.recordedSamples.push(
+        { timestampMs: now - 200, gLon: 0, gLat: 0, gVert: 0, gTotal: 0, speedMph: 0 },
+        { timestampMs: now, gLon: 0, gLat: 0, gVert: 0, gTotal: 0, speedMph: 0 }
+      );
     }
 
     try {
-      const title = document.getElementById('tripTitleInput').value.trim() || `Drive on ${new Date().toLocaleDateString()}`;
-      const driveMode = document.getElementById('tripDriveModeSelect').value || 'FSD Supervised';
+      const customTitle = document.getElementById('tripTitleInput').value.trim();
+      const tpl = state.templates.find((t) => t.id === state.activeVehicleTemplateId);
+      const carShort = tpl ? `${tpl.make} ${tpl.model}` : 'Car';
+      const title = customTitle || `${carShort} Drive (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
 
       const res = await apiFetch('/api/trips', {
         method: 'POST',
         body: JSON.stringify({
-          vehicleId: state.activeVehicleId,
           templateId: state.activeVehicleTemplateId,
           title,
-          originName: 'Recorded Start',
-          destinationName: 'Recorded End',
-          driveMode,
+          originName: 'Start',
+          destinationName: 'End',
+          driveMode: 'FSD Supervised',
           publishAsRoute: true,
           autoPublishHazards: true,
           samples: state.recordedSamples
@@ -574,49 +573,50 @@
           <div class="rm-item"><span class="rm-label">Smoothness</span><span class="rm-val">${a.smoothnessScore}/100</span></div>
           <div class="rm-item"><span class="rm-label">Body Wear</span><span class="rm-val">${a.bodyWearScore}/100 (${a.bodyWearGrade})</span></div>
           <div class="rm-item"><span class="rm-label">Peak Bump G</span><span class="rm-val">${a.peakGVert}G</span></div>
-          <div class="rm-item"><span class="rm-label">FSD Comfort</span><span class="rm-val">${a.fsdComfortScore}/100</span></div>
+          <div class="rm-item"><span class="rm-label">Duration</span><span class="rm-val">${a.durationSec}s</span></div>
         </div>
         <div style="font-size:0.82rem; color:var(--text-secondary);">
           ${a.fsdRecommendation}
-          <div style="margin-top:0.5rem;">
-            <a href="/api/trips/${res.trip.id}/export?format=csv" class="btn btn-outline btn-sm" target="_blank">⬇️ Download CSV</a>
-            <a href="/api/trips/${res.trip.id}/export?format=gpx" class="btn btn-outline btn-sm" target="_blank">⬇️ Download GPX</a>
+          <div style="margin-top:0.5rem; display:flex; gap:0.4rem;">
+            <a href="/api/trips/${res.trip.id}/export?format=csv" class="btn btn-outline btn-sm" target="_blank">⬇️ CSV</a>
+            <a href="/api/trips/${res.trip.id}/export?format=gpx" class="btn btn-outline btn-sm" target="_blank">⬇️ GPX</a>
           </div>
         </div>
       `;
 
-      state.recordedSamples = [];
-      document.getElementById('btnStopAndSaveTrip').disabled = true;
-      document.getElementById('sensorStatusBadge').textContent = 'Saved';
+      document.getElementById('tripTitleInput').value = '';
       showToast('Drive saved!');
       await refreshAllData();
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.className = 'btn btn-primary';
+      btn.textContent = '🔴 TAP TO START RECORDING';
+      document.getElementById('sensorStatusBadge').textContent = 'Ready — auto-calibrates mount on start';
     }
   }
 
-  // --- Trips Feed ---
   function renderTripsFeed() {
     const container = document.getElementById('tripsFeedContainer');
     if (!container) return;
 
     if (state.trips.length === 0) {
-      container.innerHTML = `<div style="font-size:0.82rem; color:var(--text-secondary);">No recorded drives yet.</div>`;
+      container.innerHTML = `<div style="font-size:0.84rem; color:var(--text-secondary);">No drives recorded yet. Tap the big green button to record your first drive!</div>`;
       return;
     }
 
     container.innerHTML = state.trips
       .map(
         (t) => `
-        <div style="padding:0.75rem; background:rgba(13,21,38,0.9); border:1px solid var(--border-subtle); border-radius:8px;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="padding:0.75rem; background:rgba(13,21,38,0.9); border:1px solid var(--border-subtle); border-radius:8px; display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+          <div>
             <strong>${t.title}</strong>
-            <span class="badge badge-splus">Smoothness ${t.smoothnessScore}/100</span>
+            <div style="font-size:0.76rem; color:var(--text-secondary);">
+              Smoothness: <strong>${t.smoothnessScore}/100</strong> • Peak Bump: <strong>${t.peakGVert}G</strong> • Body Wear: <strong>${t.bodyWearScore}/100</strong>
+            </div>
           </div>
-          <div style="font-size:0.76rem; color:var(--text-secondary); margin:0.25rem 0;">
-            ${t.vehicleLabel} • Peak Bump: ${t.peakGVert}G • Body Wear: ${t.bodyWearScore}/100
-          </div>
-          <div style="display:flex; gap:0.4rem; margin-top:0.4rem;">
+          <div style="display:flex; gap:0.35rem;">
             <a class="btn btn-outline btn-sm" href="/api/trips/${t.id}/export?format=csv" target="_blank">CSV</a>
             <a class="btn btn-outline btn-sm" href="/api/trips/${t.id}/export?format=gpx" target="_blank">GPX</a>
           </div>
@@ -626,42 +626,13 @@
       .join('');
   }
 
-  function updateAuthUI() {
-    const headerBtn = document.getElementById('headerAuthBtn');
-    const statusBadge = document.getElementById('accountStatusBadge');
-    const formsWrap = document.getElementById('authFormsWrapper');
-    const profileWrap = document.getElementById('loggedInProfileWrapper');
-
-    if (state.user) {
-      if (headerBtn) headerBtn.textContent = `👤 ${state.user.displayName}`;
-      if (statusBadge) {
-        statusBadge.textContent = 'Signed In';
-        statusBadge.className = 'badge badge-splus';
-      }
-      if (formsWrap) formsWrap.style.display = 'none';
-      if (profileWrap) {
-        profileWrap.style.display = 'flex';
-        document.getElementById('profileDisplayName').textContent = state.user.displayName;
-        document.getElementById('profileEmailLine').textContent = `@${state.user.username} • ${state.user.email}`;
-      }
-    } else {
-      if (headerBtn) headerBtn.textContent = 'Sign Up / Log In';
-      if (statusBadge) {
-        statusBadge.textContent = 'Not Signed In';
-        statusBadge.className = 'badge badge-info';
-      }
-      if (formsWrap) formsWrap.style.display = 'block';
-      if (profileWrap) profileWrap.style.display = 'none';
-    }
-  }
-
   async function refreshAllData() {
     try {
       const [tplData, routesData, hazData, tripsData] = await Promise.all([
         apiFetch('/api/vehicles/templates'),
         apiFetch(`/api/routes?templateId=${state.activeVehicleTemplateId}`),
         apiFetch('/api/hazards'),
-        apiFetch('/api/trips?limit=20')
+        apiFetch('/api/trips?limit=15')
       ]);
 
       state.templates = tplData.templates || [];
@@ -669,20 +640,6 @@
       state.hazards = hazData.hazards || [];
       state.trips = tripsData.trips || [];
 
-      if (state.token) {
-        try {
-          const meData = await apiFetch('/api/auth/me');
-          state.user = meData.user;
-          state.vehicles = meData.user.vehicles || [];
-          if (meData.user.calibration) state.calibration = meData.user.calibration;
-        } catch {
-          state.token = null;
-          state.user = null;
-          localStorage.removeItem('sr_token');
-        }
-      }
-
-      updateAuthUI();
       populateVehicleSelectors();
       renderRoutesList();
       renderTripsFeed();
@@ -697,21 +654,14 @@
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    document.getElementById('headerAuthBtn')?.addEventListener('click', () => switchTab('account'));
-
     document.getElementById('activeCarSelect')?.addEventListener('change', (e) => {
-      const val = e.target.value;
-      if (val.startsWith('user:')) {
-        state.activeVehicleId = Number(val.slice(5));
-      } else {
-        state.activeVehicleTemplateId = val;
-        state.activeVehicleId = null;
-      }
+      state.activeVehicleTemplateId = e.target.value;
+      localStorage.setItem('sr_car_template', e.target.value);
+      refreshAllData();
     });
 
-    document.getElementById('btnStartPhoneSensors')?.addEventListener('click', toggleRealPhoneSensors);
-    document.getElementById('btnCalibrateMount')?.addEventListener('click', calibratePhoneMount);
-    document.getElementById('btnStopAndSaveTrip')?.addEventListener('click', finishAndSaveTrip);
+    document.getElementById('btnOneTapRecord')?.addEventListener('click', handleOneTapRecordToggle);
+    document.getElementById('btnCalibrateMount')?.addEventListener('click', reZeroMount);
 
     document.getElementById('btnCenterMyGps')?.addEventListener('click', () => {
       if (!('geolocation' in navigator)) return;
@@ -748,7 +698,7 @@
       );
     });
 
-    async function handlePlanCustomRoute() {
+    document.getElementById('btnPlanCustomRoute')?.addEventListener('click', async () => {
       const originQuery = document.getElementById('customOriginInput')?.value.trim();
       const destinationQuery = document.getElementById('customDestInput')?.value.trim();
       if (!originQuery || !destinationQuery) {
@@ -766,7 +716,6 @@
             originQuery,
             destinationQuery,
             mode: 'fsd_smooth',
-            vehicleId: state.activeVehicleId,
             templateId: state.activeVehicleTemplateId,
             saveToPublic: false
           })
@@ -780,97 +729,6 @@
         btn.disabled = false;
         btn.textContent = prevText;
       }
-    }
-
-    document.getElementById('btnPlanCustomRoute')?.addEventListener('click', handlePlanCustomRoute);
-
-    // Account Sign Up / Log In
-    document.getElementById('btnShowSignupForm')?.addEventListener('click', () => {
-      document.getElementById('signupForm').style.display = 'flex';
-      document.getElementById('loginForm').style.display = 'none';
-    });
-    document.getElementById('btnShowLoginForm')?.addEventListener('click', () => {
-      document.getElementById('signupForm').style.display = 'none';
-      document.getElementById('loginForm').style.display = 'flex';
-    });
-
-    document.getElementById('signupForm')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      try {
-        const data = await apiFetch('/api/auth/signup', {
-          method: 'POST',
-          body: JSON.stringify({
-            displayName: document.getElementById('suDisplayName').value,
-            username: document.getElementById('suUsername').value,
-            email: document.getElementById('suEmail').value,
-            password: document.getElementById('suPassword').value,
-            vehicleTemplateId: document.getElementById('suCarTemplate').value
-          })
-        });
-        state.token = data.token;
-        localStorage.setItem('sr_token', data.token);
-        state.user = data.user;
-        state.vehicles = data.user.vehicles || [];
-        updateAuthUI();
-        populateVehicleSelectors();
-        showToast(`Account created for ${data.user.displayName}!`);
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
-
-    document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      try {
-        const data = await apiFetch('/api/auth/login', {
-          method: 'POST',
-          body: JSON.stringify({
-            identifier: document.getElementById('liIdentifier').value,
-            password: document.getElementById('liPassword').value
-          })
-        });
-        state.token = data.token;
-        localStorage.setItem('sr_token', data.token);
-        state.user = data.user;
-        state.vehicles = data.user.vehicles || [];
-        updateAuthUI();
-        populateVehicleSelectors();
-        showToast(`Signed in as ${data.user.displayName}!`);
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
-
-    document.getElementById('btnAddGarageVehicle')?.addEventListener('click', async () => {
-      const tplId = document.getElementById('garageTemplateSelect').value;
-      if (!state.token) {
-        state.activeVehicleTemplateId = tplId;
-        populateVehicleSelectors();
-        showToast('Selected car model! Sign up to save cars to your account.');
-        return;
-      }
-      try {
-        const res = await apiFetch('/api/vehicles', {
-          method: 'POST',
-          body: JSON.stringify({ templateId: tplId, isPrimary: true })
-        });
-        state.vehicles = res.vehicles;
-        populateVehicleSelectors();
-        showToast('Added car to your garage!');
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
-
-    document.getElementById('btnLogout')?.addEventListener('click', async () => {
-      await apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-      state.token = null;
-      state.user = null;
-      state.vehicles = [];
-      localStorage.removeItem('sr_token');
-      updateAuthUI();
-      populateVehicleSelectors();
-      showToast('Logged out.');
     });
   }
 
