@@ -468,7 +468,71 @@ function transformPhoneToVehicleG(rawSample, calibration) {
  * @param {Array} samples - Telemetry points
  * @param {Object} vehicle - Vehicle profile for suspension transfer normalization
  */
-function analyzeTripBiomechanics(samples = [], vehicle = {}) {
+/**
+ * Filter out start/end phone-handling spikes (tapping Start/Stop or setting phone into mount at <3 mph)
+ * and remove slow mount-tilt / road-grade DC gravity drift on real multi-minute drives.
+ */
+function sanitizeAndDetrendSamples(rawSamples = []) {
+  if (!Array.isArray(rawSamples) || rawSamples.length <= 4) {
+    return rawSamples;
+  }
+
+  const n = rawSamples.length;
+  const hasRealGpsMovement = rawSamples.some((s) => (Number(s.speedMph) || 0) >= 5);
+
+  // 1. Trim start/end phone-handling artifacts on real drives (>20 samples)
+  let filtered = rawSamples;
+  if (n >= 20) {
+    const headCutoff = Math.min(12, Math.floor(n * 0.04));
+    const tailStart = Math.max(headCutoff, n - Math.min(10, Math.floor(n * 0.03)));
+    filtered = rawSamples.filter((s, idx) => {
+      const spd = Number(s.speedMph) || 0;
+      const gTot = Number(s.gTotal) || Math.hypot(Number(s.gLon) || 0, Number(s.gLat) || 0, Number(s.gVert) || 0);
+      // Drop pre-calibration / phone-placement spike at the very start or pickup at the very end
+      if (idx < headCutoff && (gTot > 0.42 || (hasRealGpsMovement && spd < 2))) return false;
+      if (idx >= tailStart && (gTot > 0.42 || (hasRealGpsMovement && spd < 2))) return false;
+      // Drop impossible >1.2G spike while stationary (0-2 mph)
+      if (hasRealGpsMovement && spd < 2 && gTot > 0.55) return false;
+      return true;
+    });
+    if (filtered.length < 4) filtered = rawSamples;
+  }
+
+  // 2. If average |gLon| or |gLat| across a real drive (>50 samples) has a static mount-tilt DC offset (>0.08G),
+  // apply a slow exponential moving average high-pass filter so mount shifts don't masquerade as constant braking.
+  if (filtered.length >= 50) {
+    const meanLon = filtered.reduce((acc, s) => acc + (Number(s.gLon) || 0), 0) / filtered.length;
+    const meanLat = filtered.reduce((acc, s) => acc + (Number(s.gLat) || 0), 0) / filtered.length;
+    const meanVert = filtered.reduce((acc, s) => acc + (Number(s.gVert) || 0), 0) / filtered.length;
+
+    if (Math.abs(meanLon) > 0.08 || Math.abs(meanLat) > 0.08 || Math.abs(meanVert) > 0.08) {
+      let emaLon = Number(filtered[0].gLon) || 0;
+      let emaLat = Number(filtered[0].gLat) || 0;
+      let emaVert = Number(filtered[0].gVert) || 0;
+      const alpha = 0.93;
+
+      filtered = filtered.map((s) => {
+        const rawLon = Number(s.gLon) || 0;
+        const rawLat = Number(s.gLat) || 0;
+        const rawVert = Number(s.gVert) || 0;
+        emaLon = alpha * emaLon + (1 - alpha) * rawLon;
+        emaLat = alpha * emaLat + (1 - alpha) * rawLat;
+        emaVert = alpha * emaVert + (1 - alpha) * rawVert;
+
+        const gLon = Number((rawLon - emaLon).toFixed(4));
+        const gLat = Number((rawLat - emaLat).toFixed(4));
+        const gVert = Number((rawVert - emaVert).toFixed(4));
+        const gTotal = Number(Math.hypot(gLon, gLat, gVert).toFixed(4));
+        return { ...s, gLon, gLat, gVert, gTotal };
+      });
+    }
+  }
+
+  return filtered;
+}
+
+function analyzeTripBiomechanics(rawSamples = [], vehicle = {}) {
+  const samples = sanitizeAndDetrendSamples(rawSamples);
   const transfer = computeVehicleTransferFactor(vehicle);
 
   if (!Array.isArray(samples) || samples.length === 0) {
@@ -753,7 +817,9 @@ function predictRouteForVehicle(route, vehicle = {}) {
 /**
  * Automatically scan telemetry points for localized high-G road hazards.
  */
-function detectGForceHazards(samples = [], vehicle = {}) {
+function detectGForceHazards(rawSamples = [], vehicle = {}) {
+  const samples = sanitizeAndDetrendSamples(rawSamples);
+  const hasRealGpsSpeed = samples.some((s) => (Number(s.speedMph) || 0) >= 8);
   const hazards = [];
   const transfer = computeVehicleTransferFactor(vehicle);
   let lastHazardIdx = -10;
@@ -762,6 +828,7 @@ function detectGForceHazards(samples = [], vehicle = {}) {
     if (i - lastHazardIdx < 5) continue; // Debounce adjacent samples
 
     const s = samples[i];
+    if (hasRealGpsSpeed && (Number(s.speedMph) || 0) < 5) continue;
     const prev = samples[i - 1];
     const gLon = Number(s.gLon) || 0;
     const gLat = Number(s.gLat) || 0;
@@ -801,6 +868,12 @@ function detectGForceHazards(samples = [], vehicle = {}) {
     }
 
     if (hazardType && typeof s.lat === 'number' && typeof s.lng === 'number') {
+      // Spatially deduplicate within 0.05 miles (~260 ft) so one intersection doesn't create multiple pins
+      const isDuplicateSpot = hazards.some(
+        (h) => h.type === hazardType && haversineMiles(h.lat, h.lng, s.lat, s.lng) < 0.05
+      );
+      if (isDuplicateSpot) continue;
+
       lastHazardIdx = i;
       const normalizedSeverityG = Number((gTotal / (transfer.verticalFactor || 1.0)).toFixed(3));
       hazards.push({

@@ -486,12 +486,23 @@
     state.rawMotionBuffer.push({ ax, ay, az });
     if (state.rawMotionBuffer.length > 20) state.rawMotionBuffer.shift();
 
-    // Auto-zero mount orientation automatically from the first 5 readings
-    if (!state.hasAutoCalibrated && state.rawMotionBuffer.length >= 3) {
-      state.calibration = computeLocalCalibration(state.rawMotionBuffer);
-      state.hasAutoCalibrated = true;
-      document.getElementById('mountCalibrationInfo').textContent =
-        `Mount Auto-Zeroed (${state.calibration.mountAngles.pitchDeg}° tilt)`;
+    // Auto-zero mount orientation automatically from the first 3 readings
+    if (!state.hasAutoCalibrated) {
+      if (state.rawMotionBuffer.length >= 3) {
+        state.calibration = computeLocalCalibration(state.rawMotionBuffer);
+        state.hasAutoCalibrated = true;
+        document.getElementById('mountCalibrationInfo').textContent =
+          `Mount Auto-Zeroed (${state.calibration.mountAngles.pitchDeg}° tilt)`;
+      } else {
+        return; // Wait for initial 3 samples (~180ms) before emitting G-forces
+      }
+    } else {
+      // Continuously adapt gravity baseline with a slow low-pass filter (handles setting phone in mount or road grade)
+      const gb = state.calibration.gravityBaseline;
+      const alpha = 0.965;
+      gb.gx = alpha * gb.gx + (1 - alpha) * ax;
+      gb.gy = alpha * gb.gy + (1 - alpha) * ay;
+      gb.gz = alpha * gb.gz + (1 - alpha) * az;
     }
 
     const cal = state.calibration;
